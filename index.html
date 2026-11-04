@@ -128,7 +128,8 @@ svg.arr{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
   .ppage:last-child{page-break-after:auto}
   .ppage h1{font-size:20px;margin:0 0 4px}.ppage .pname{margin-bottom:10px;color:#444}
   .ppage table{width:100%;border-collapse:collapse}.ppage th,.ppage td{border:1px solid #999;padding:6px 8px;text-align:left;font-size:14px}
-  .ppage th{background:#eef}.ppage .pw{font-family:Georgia,serif;font-weight:700}
+  .ppage th{background:#eef}.ppage .pw{font-family:Georgia,serif;font-weight:700;width:38%}
+  .ppage .pg{font-size:16px;margin:16px 0 6px}
 }
 .vpairs{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:6px 14px}
 .vpair{display:flex;flex-wrap:wrap;gap:2px 12px;align-items:baseline;border-bottom:1px dashed var(--line);padding:6px 2px}
@@ -1148,6 +1149,22 @@ const WS_ORDER = { "불통": 0, "통과": 1, "미응시": 2 };
 function bookWords(p) {
   return p.voc.list.map(v => ({ w: v.w, m: v.m, res: wordStatus(p, v) })).sort((a, b) => WS_ORDER[a.res] - WS_ORDER[b.res]);
 }
+// 시험 결과별로 묶은 [{label, words}] — 시험을 아직 안 봤으면 묶음 없이 한 덩어리
+function bookGroups(p) {
+  const ws = bookWords(p);
+  if (ws.every(x => x.res === "미응시")) return [{ label: "", words: ws }];
+  const lab = { "불통": ["❌ 불통 단어", " — 다시 외워요"], "통과": ["✅ 통과 단어", ""], "미응시": ["⬜ 아직 시험 안 본 단어", ""] };
+  return ["불통", "통과", "미응시"].map(k => { const words = ws.filter(x => x.res === k); return { label: lab[k][0] + " " + words.length + "개" + lab[k][1], words }; }).filter(g => g.words.length);
+}
+function bookRows2(p) {
+  const out = [];
+  bookGroups(p).forEach((g, i) => {
+    if (i) out.push(["", ""]);
+    if (g.label) out.push([g.label, ""]);
+    g.words.forEach(x => out.push([x.w, x.m]));
+  });
+  return out;
+}
 function vxCard(pid) {
   const ps = (pid ? S.passages.filter(p => p.id === pid) : S.passages).filter(p => p.voc.list.length);
   if (!ps.length) return "";
@@ -1156,7 +1173,7 @@ function vxCard(pid) {
     ? `<button onclick="toMySheet('${pid}')">🟩 내 구글 시트로 보내기</button>`
     : ps.map(p => `<button class="ghost small" onclick="toMySheet('${p.id}')">🟩 ${esc(p.d.title.slice(0, 30))}</button>`).join("");
   return `<div class="hint-box" style="margin-top:14px"><b>📤 내 단어장 저장하기</b>
-    <div class="muted" style="margin:4px 0 8px">단어·뜻·시험 결과(❌ 불통 → ✅ 통과 → ⬜ 미응시 순서)로 저장해요. ${pid ? "" : "엑셀·PDF는 지문마다 다른 시트·쪽으로 나뉘어요."}</div>
+    <div class="muted" style="margin:4px 0 8px">단어와 뜻을 시험 결과별로 묶어서(❌ 불통 → ✅ 통과 → ⬜ 아직 안 본 단어) 저장해요. ${pid ? "" : "엑셀·PDF는 지문마다 다른 시트·쪽으로 나뉘어요."}</div>
     <div class="row"><button class="ghost" onclick="saveXlsx(${arg})">📊 엑셀 저장</button><button class="ghost" onclick="savePdf(${arg})">📄 PDF 저장</button></div>
     <div style="margin-top:10px"><div class="muted" style="margin-bottom:4px">🟩 <b>내 구글 시트</b>: 학교 구글 계정의 <b>"${esc(S.me.name)} 단어장"</b> 시트 하나에 지문마다 탭이 생겨요. 같은 지문을 다시 보내면 그 탭이 최신 내용으로 바뀌어요.${pid ? "" : " 지문을 하나씩 눌러 보내요."}</div>
     <div class="row">${sheetBtns}</div></div></div>`;
@@ -1170,8 +1187,8 @@ function saveXlsx(pid) {
   if (!ps.length) return toast("저장할 단어가 없어요");
   const sheets = ps.map(p => ({
     name: p.d.title,
-    widths: [24, 46, 12],
-    rows: [[p.d.title + " 단어장"], ["이름: " + S.me.name + " (" + S.me.sid + ")"], [], ["영어", "한국어 뜻", "시험 결과"]].concat(bookWords(p).map(x => [x.w, x.m, x.res])),
+    widths: [28, 50],
+    rows: [[p.d.title + " 단어장"], ["이름: " + S.me.name + " (" + S.me.sid + ")"], [], ["영어", "한국어 뜻"]].concat(bookRows2(p)),
   }));
   downloadBlob(makeXlsxBook(sheets), fileBase(pid) + ".xlsx");
   toast("엑셀 파일을 저장했어요");
@@ -1183,7 +1200,7 @@ function savePdf(pid) {
   let box = document.getElementById("printArea");
   if (!box) { box = document.createElement("div"); box.id = "printArea"; document.body.append(box); }
   box.innerHTML = ps.map(p => `<section class="ppage"><h1>${esc(p.d.title)} 단어장</h1><div class="pname">이름: ${esc(S.me.name)} (${esc(S.me.sid)})</div>
-    <table><tr><th>영어</th><th>한국어 뜻</th><th>시험 결과</th></tr>${bookWords(p).map(x => `<tr><td class="pw">${esc(x.w)}</td><td>${esc(x.m)}</td><td>${WS[x.res][0]} ${x.res}</td></tr>`).join("")}</table></section>`).join("");
+    ${bookGroups(p).map(g => `${g.label ? `<h2 class="pg">${esc(g.label)}</h2>` : ""}<table><tr><th>영어</th><th>한국어 뜻</th></tr>${g.words.map(x => `<tr><td class="pw">${esc(x.w)}</td><td>${esc(x.m)}</td></tr>`).join("")}</table>`).join("")}</section>`).join("");
   const old = document.title; document.title = fileBase(pid);
   setTimeout(() => { window.print(); document.title = old; }, 50);
 }
@@ -1193,7 +1210,7 @@ async function toMySheet(pid) {
   const win = window.open("", "_blank"); // 팝업 차단을 피하려고 클릭 직후 먼저 연다
   const payload = JSON.stringify({
     title: p.d.title, name: S.me.name, book: S.me.name + " 단어장",
-    rows: bookWords(p).map(x => [x.w, x.m + "  (" + WS[x.res][0] + " " + x.res + ")"]),
+    rows: bookRows2(p),
   });
   const url = MY_SHEETS_URL + "?" + await packForUrl(payload);
   if (win) { win.opener = null; win.location.href = url; } else location.href = url;
