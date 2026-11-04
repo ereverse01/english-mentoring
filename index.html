@@ -114,6 +114,9 @@ svg.arr{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
 .vrow b{font-family:Georgia,serif;font-size:18px}
 .vrow button{padding:6px;background:#fff;color:var(--bad);border:1.5px solid var(--line)}
 @media (max-width:560px){.vrow{grid-template-columns:1fr 40px}.vrow input{grid-column:1/-1;grid-row:2}}
+.vpairs{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:6px 14px}
+.vpair{display:grid;grid-template-columns:minmax(110px,auto) 1fr;gap:10px;align-items:baseline;border-bottom:1px dashed var(--line);padding:6px 2px}
+.vpair b{font-family:Georgia,serif;font-size:18px}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
 .fcard{height:110px;border-radius:14px;border:1.5px solid var(--line);background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:8px;cursor:pointer;position:relative}
 .fcard .fw{font-family:Georgia,serif;font-size:21px;font-weight:700}
@@ -561,7 +564,7 @@ function addSample() {
   const p = buildPassage(JSON.parse(JSON.stringify(SAMPLE)), "고1", "심리");
   S.passages.unshift(p); touch(p); openP(p.id);
 }
-function openP(id) { V.pid = id; V.tab = "home"; V.step = "tr"; T = null; V.aiShow = false; V.skimEdit = false; render(); window.scrollTo(0, 0); }
+function openP(id) { V.pid = id; V.tab = "home"; V.step = "tr"; T = null; V.aiShow = false; V.skimEdit = false; V.preEdit = false; render(); window.scrollTo(0, 0); }
 function delP() {
   const p = cur(); if (!p) return;
   if (!confirm("이 지문을 내 목록에서 지울까요? (받은 스티커도 사라져요)")) return;
@@ -589,6 +592,15 @@ function viewPassage() {
 
 // 1. 문장 번역
 function skimDone(p) { return (p.skim && p.skim.done) || p.tr.sc.some(x => x != null); }
+function preDone(p) { return p.pre || skimDone(p); }
+function vPre(p) {
+  const pairs = p.d.vocab.map(v => `<div class="vpair"><b>${esc(v.w)}</b><span>${esc(v.m)}</span></div>`).join("");
+  return `<div class="card"><h2>📖 먼저 단어부터 훑어봐요</h2>
+    <div class="muted">이 글에 나오는 어려운 단어·숙어예요. 외우지 않아도 괜찮아요. 쭉 한 번 읽어 보기만 해요!</div>
+    <div class="vpairs" style="margin-top:12px">${pairs || '<div class="muted">이 지문에는 단어 목록이 없어요.</div>'}</div>
+    <div class="row" style="margin-top:14px"><button onclick="finishPre()">단어 다 봤어요 → 글 훑어 읽기</button></div></div>`;
+}
+function finishPre() { const p = cur(); p.pre = true; V.preEdit = false; markAtt(false); touch(p); render(); window.scrollTo(0, 0); }
 function vSkim(p) {
   const sk = p.skim || {};
   return `<div class="card"><h2>👀 먼저 글 전체를 훑어 읽어요 (Skimming)</h2>
@@ -606,10 +618,11 @@ function finishSkim() {
   V.skimEdit = false; markAtt(false); touch(p); render(); window.scrollTo(0, 0);
 }
 function vTr(p) {
+  if (!preDone(p) || V.preEdit) return vPre(p);
   if (!skimDone(p) || V.skimEdit) return vSkim(p);
   const done = p.tr.sc.filter(x => x != null).length, n = p.d.sentences.length;
   const sk = p.skim || {};
-  const skimBox = p.skim ? `<div class="card" style="padding:12px 18px"><div class="row" style="justify-content:space-between"><b>👀 훑어 읽고 내가 쓴 것</b><button class="ghost small" onclick="V.skimEdit=true;render()">고치기</button></div>
+  const skimBox = p.skim ? `<div class="card" style="padding:12px 18px"><div class="row" style="justify-content:space-between"><b>👀 훑어 읽고 내가 쓴 것</b><span class="row"><button class="ghost small" onclick="V.preEdit=true;render()">📖 단어 다시 보기</button><button class="ghost small" onclick="V.skimEdit=true;render()">고치기</button></span></div>
     <div class="muted">키워드: ${esc(sk.kw || "(비워 둠)")} · 주제: ${esc(sk.topic || "(비워 둠)")}</div></div>` : "";
   const rows = p.d.sentences.map((s, i) => {
     const sc = p.tr.sc[i];
