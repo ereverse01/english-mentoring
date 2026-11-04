@@ -120,6 +120,16 @@ svg.arr{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
 .gw{position:relative;border-bottom:2px dotted #9aa8c7;cursor:help}
 .gw:hover::after,.gw.show::after{content:attr(data-tip);position:absolute;left:50%;bottom:calc(100% + 6px);transform:translateX(-50%);background:var(--ink);color:#fff;font-family:"Pretendard","Malgun Gothic",system-ui,sans-serif;font-size:15px;font-weight:600;line-height:1.4;padding:6px 10px;border-radius:8px;white-space:nowrap;z-index:15;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.18)}
 .gw:hover,.gw.show{background:#eef3ff}
+#printArea{display:none}
+@media print{
+  body>*:not(#printArea){display:none!important}
+  #printArea{display:block}
+  .ppage{page-break-after:always;font-family:"Malgun Gothic",sans-serif}
+  .ppage:last-child{page-break-after:auto}
+  .ppage h1{font-size:20px;margin:0 0 4px}.ppage .pname{margin-bottom:10px;color:#444}
+  .ppage table{width:100%;border-collapse:collapse}.ppage th,.ppage td{border:1px solid #999;padding:6px 8px;text-align:left;font-size:14px}
+  .ppage th{background:#eef}.ppage .pw{font-family:Georgia,serif;font-weight:700}
+}
 .vpairs{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:6px 14px}
 .vpair{display:flex;flex-wrap:wrap;gap:2px 12px;align-items:baseline;border-bottom:1px dashed var(--line);padding:6px 2px}
 .vpair b{font-family:Georgia,serif;font-size:18px;min-width:110px}
@@ -180,6 +190,7 @@ td.l,th.l{text-align:left}
 <div id="app"></div>
 <div id="toast"></div>
 <script src="dict.js"></script>
+<script src="xlsx.js"></script>
 <div id="pop" onclick="this.classList.remove('show')"><div class="in"><div class="s" id="popS"></div><div id="popT" style="font-weight:800;font-size:20px;margin-top:6px"></div><div class="muted" style="margin-top:6px">눌러서 닫기</div></div></div>
 <script>
 // ▼ 구글 시트 Apps Script 웹 앱 주소 (비워 두면 이 기기에만 저장)
@@ -1123,57 +1134,70 @@ const WS = { "통과": ["✅", "var(--ok)"], "불통": ["❌", "var(--bad)"], "�
 function vocGroups(p) {
   const g = { "통과": [], "불통": [], "미응시": [] };
   p.voc.list.forEach(v => g[wordStatus(p, v)].push(v));
-  const box = k => g[k].length ? `<div style="margin-top:12px"><div class="row" style="justify-content:space-between"><b style="color:${WS[k][1]}">${WS[k][0]} ${k === "미응시" ? "아직 시험 안 본" : k} 단어 ${g[k].length}개</b>
-      <button class="ghost small" onclick="copyVocab('${p.id}','${k}')">📋 ${k} 단어만 복사</button></div>
+  const box = k => g[k].length ? `<div style="margin-top:12px"><div class="row" style="justify-content:space-between"><b style="color:${WS[k][1]}">${WS[k][0]} ${k === "미응시" ? "아직 시험 안 본" : k} 단어 ${g[k].length}개</b></div>
       <div class="vpairs" style="margin-top:6px">${g[k].map(v => `<div class="vpair"><b>${esc(v.w)}</b><span>${esc(v.m)}</span></div>`).join("")}</div></div>` : "";
   return `<div class="card"><h2>🗂️ 시험 결과로 나눈 단어장</h2>
-    <div class="muted">단어 시험에서 맞힌 단어(통과)와 틀린 단어(불통)를 나눠 보여 줘요. 오답 재시험에서 맞히면 통과로 옮겨 가요. 묶음별 복사도 내 구글 시트에 붙여넣을 수 있어요.</div>
+    <div class="muted">단어 시험에서 맞힌 단어(통과)와 틀린 단어(불통)를 나눠 보여 줘요. 오답 재시험에서 맞히면 통과로 옮겨 가요.</div>
     ${box("불통")}${box("통과")}${box("미응시")}
     ${vxCard(p.id)}</div>`;
 }
-// ── 내 구글 시트 단어장으로 옮기기 (복사 → 내 시트 맨 아래에 붙여넣기, 이미 옮긴 단어는 기억)
-function vxRows(pid, mode) {
-  const ps = pid ? S.passages.filter(p => p.id === pid) : S.passages.slice().reverse();
-  const out = [], seen = new Set();
-  ps.forEach(p => p.voc.list.forEach(v => {
-    const key = norm(v.w), res = wordStatus(p, v);
-    if (seen.has(key)) return;
-    if (mode === "new" && S.vx[key]) return;
-    seen.add(key);
-    if ((mode === "통과" || mode === "불통" || mode === "미응시") && res !== mode) return;
-    out.push({ key, row: [today(), p.d.title, v.w, v.m, res] });
-  }));
-  return out;
+// ── 단어장 내보내기: 엑셀(지문별 시트) · PDF(인쇄) · 내 구글 시트(학교 계정, 지문마다 탭)
+// 내 맘대로 단어장 앱과 같은 '학생 계정으로 실행되는' Apps Script를 씀 → "이름 단어장" 시트 하나에 지문별 탭
+const MY_SHEETS_URL = "https://script.google.com/a/macros/mmhs.hs.kr/s/AKfycbwpQWbnEn-Fd_P3cnRlY_Yz78xijd5JQ_2VUj4uDwgkxQRH8wUIRh2ofu6SY-kyeikS/exec";
+const WS_ORDER = { "불통": 0, "통과": 1, "미응시": 2 };
+function bookWords(p) {
+  return p.voc.list.map(v => ({ w: v.w, m: v.m, res: wordStatus(p, v) })).sort((a, b) => WS_ORDER[a.res] - WS_ORDER[b.res]);
 }
 function vxCard(pid) {
-  const fresh = vxRows(pid, "new").length;
-  const sheet = S.mySheet
-    ? `<div class="row"><button class="ghost small" onclick="window.open(S.mySheet,'_blank')">📂 내 구글 시트 열기</button><button class="ghost small" onclick="setMySheet()">주소 바꾸기</button></div>`
-    : `<div class="row"><button class="ghost small" onclick="window.open('https://sheets.new','_blank')">📄 처음 한 번: 새 구글 시트 만들기</button><button class="ghost small" onclick="setMySheet()">🔗 내 시트 주소 저장</button></div>
-       <div class="muted" style="margin-top:4px">새 시트를 만든 뒤 주소창의 주소를 복사해서 <b>내 시트 주소 저장</b>에 넣어 두면, 다음부터 바로 열 수 있어요.</div>`;
-  return `<div class="hint-box" style="margin-top:14px"><b>📤 내 구글 시트 단어장으로 옮기기</b>
-    <div class="muted" style="margin:4px 0 8px">복사한 뒤 내 구글 시트에서 <b>A열 맨 아래 빈 칸</b>을 누르고 붙여넣기(Ctrl+V, 태블릿은 길게 눌러 붙여넣기) 하면 날짜·지문·단어·뜻·시험 결과가 한 줄씩 쌓여요. 이 기기에서 이미 옮긴 단어는 기억해 두었다가 <b>새 단어만</b> 복사해 줘요.</div>
-    ${sheet}
-    <div class="row" style="margin-top:8px"><button onclick="copyVocab(${pid ? `'${pid}'` : "null"},'new')" ${fresh ? "" : "disabled"}>📋 새 단어 ${fresh}개 복사</button>
-    <button class="ghost small" onclick="copyVocab(${pid ? `'${pid}'` : "null"},'all')">전체 다시 복사</button></div></div>`;
+  const ps = (pid ? S.passages.filter(p => p.id === pid) : S.passages).filter(p => p.voc.list.length);
+  if (!ps.length) return "";
+  const arg = pid ? `'${pid}'` : "null";
+  const sheetBtns = pid
+    ? `<button onclick="toMySheet('${pid}')">🟩 내 구글 시트로 보내기</button>`
+    : ps.map(p => `<button class="ghost small" onclick="toMySheet('${p.id}')">🟩 ${esc(p.d.title.slice(0, 30))}</button>`).join("");
+  return `<div class="hint-box" style="margin-top:14px"><b>📤 내 단어장 저장하기</b>
+    <div class="muted" style="margin:4px 0 8px">단어·뜻·시험 결과(❌ 불통 → ✅ 통과 → ⬜ 미응시 순서)로 저장해요. ${pid ? "" : "엑셀·PDF는 지문마다 다른 시트·쪽으로 나뉘어요."}</div>
+    <div class="row"><button class="ghost" onclick="saveXlsx(${arg})">📊 엑셀 저장</button><button class="ghost" onclick="savePdf(${arg})">📄 PDF 저장</button></div>
+    <div style="margin-top:10px"><div class="muted" style="margin-bottom:4px">🟩 <b>내 구글 시트</b>: 학교 구글 계정의 <b>"${esc(S.me.name)} 단어장"</b> 시트 하나에 지문마다 탭이 생겨요. 같은 지문을 다시 보내면 그 탭이 최신 내용으로 바뀌어요.${pid ? "" : " 지문을 하나씩 눌러 보내요."}</div>
+    <div class="row">${sheetBtns}</div></div></div>`;
 }
-function setMySheet() {
-  const u = prompt("내 구글 시트 주소를 붙여넣어 주세요 (https://docs.google.com/spreadsheets/...)", S.mySheet || "");
-  if (u == null) return;
-  if (u.trim() && !/^https:\/\/docs\.google\.com\/spreadsheets\//.test(u.trim())) return toast("구글 시트 주소가 아니에요");
-  S.mySheet = u.trim(); saveLocal(); render(); toast(S.mySheet ? "내 시트 주소를 저장했어요" : "주소를 지웠어요");
+function fileBase(pid) {
+  const p = pid && S.passages.find(x => x.id === pid);
+  return (S.me.name + " 단어장" + (p ? " - " + p.d.title : "")).replace(/[\\/:*?"<>|]/g, " ").slice(0, 80);
 }
-function copyVocab(pid, mode) {
-  const rows = vxRows(pid, mode);
-  if (!rows.length) return toast(mode === "new" ? "새로 옮길 단어가 없어요" : "복사할 단어가 없어요");
-  const first = !Object.keys(S.vx).length;
-  const lines = (first ? [["날짜", "지문", "단어", "뜻", "시험 결과"]] : []).concat(rows.map(r => r.row)).map(r => r.map(c => String(c).replace(/[\t\n]/g, " ")).join("\t"));
-  copyText(lines.join("\n")).then(ok => {
-    if (!ok) return toast("복사가 안 됐어요. 다시 눌러 주세요");
-    rows.forEach(r => S.vx[r.key] = today()); saveLocal(); render();
-    toast(`${rows.length}개 복사했어요! 내 시트 A열 맨 아래 빈 칸에 붙여넣으세요`);
+function saveXlsx(pid) {
+  const ps = (pid ? S.passages.filter(p => p.id === pid) : S.passages.slice().reverse()).filter(p => p.voc.list.length);
+  if (!ps.length) return toast("저장할 단어가 없어요");
+  const sheets = ps.map(p => ({
+    name: p.d.title,
+    widths: [24, 46, 12],
+    rows: [[p.d.title + " 단어장"], ["이름: " + S.me.name + " (" + S.me.sid + ")"], [], ["영어", "한국어 뜻", "시험 결과"]].concat(bookWords(p).map(x => [x.w, x.m, x.res])),
+  }));
+  downloadBlob(makeXlsxBook(sheets), fileBase(pid) + ".xlsx");
+  toast("엑셀 파일을 저장했어요");
+}
+function savePdf(pid) {
+  const ps = (pid ? S.passages.filter(p => p.id === pid) : S.passages.slice().reverse()).filter(p => p.voc.list.length);
+  if (!ps.length) return toast("저장할 단어가 없어요");
+  alert('인쇄 창이 열리면 [대상] 또는 [프린터]를 "PDF로 저장"으로 바꾸고 [저장]을 누르세요.');
+  let box = document.getElementById("printArea");
+  if (!box) { box = document.createElement("div"); box.id = "printArea"; document.body.append(box); }
+  box.innerHTML = ps.map(p => `<section class="ppage"><h1>${esc(p.d.title)} 단어장</h1><div class="pname">이름: ${esc(S.me.name)} (${esc(S.me.sid)})</div>
+    <table><tr><th>영어</th><th>한국어 뜻</th><th>시험 결과</th></tr>${bookWords(p).map(x => `<tr><td class="pw">${esc(x.w)}</td><td>${esc(x.m)}</td><td>${WS[x.res][0]} ${x.res}</td></tr>`).join("")}</table></section>`).join("");
+  const old = document.title; document.title = fileBase(pid);
+  setTimeout(() => { window.print(); document.title = old; }, 50);
+}
+async function toMySheet(pid) {
+  const p = S.passages.find(x => x.id === pid);
+  if (!p || !p.voc.list.length) return toast("보낼 단어가 없어요");
+  const win = window.open("", "_blank"); // 팝업 차단을 피하려고 클릭 직후 먼저 연다
+  const payload = JSON.stringify({
+    title: p.d.title, name: S.me.name, book: S.me.name + " 단어장",
+    rows: bookWords(p).map(x => [x.w, x.m + "  (" + WS[x.res][0] + " " + x.res + ")"]),
   });
-  if (S.mySheet) window.open(S.mySheet, "_blank");
+  const url = MY_SHEETS_URL + "?" + await packForUrl(payload);
+  if (win) { win.opener = null; win.location.href = url; } else location.href = url;
+  alert('새 탭에서 내 구글 시트를 만들고 있어요.\n처음 한 번은 학교 구글 계정을 고르고 [허용]을 눌러 주세요. (허용한 뒤 시트가 안 생기면 버튼을 한 번 더 누르세요)\n완료되면 [내 구글 시트 열기]를 누르세요.');
 }
 function list_flipAll() { const p = cur(); p.voc.list.forEach((_, i) => V.flip[i] = true); render(); }
 function knowIt(i) { const p = cur(); const k = norm(p.voc.list[i].w); p.voc.known[k] = !p.voc.known[k]; touch(p); render(); }
@@ -1234,7 +1258,21 @@ function finishVoc() {
 }
 
 // 5·6. 단어 시험
-function makeItems(p, words) { return shuffle(words).map(v => ({ v, kind: "ko" })); }
+function makeItems(p, words, kind) {
+  const pool = [...new Set(p.voc.list.map(v => v.m).concat(p.d.vocab.map(v => v.m)).filter(Boolean))];
+  const extra = [...DICT.values()];
+  return shuffle(words).map(v => {
+    if (kind !== "mc") return { v, kind: "ko" };
+    const others = shuffle(pool.filter(m => m !== v.m)).slice(0, 3);
+    while (others.length < 3 && extra.length) { const m = extra[Math.floor(Math.random() * extra.length)]; if (m !== v.m && !others.includes(m)) others.push(m); }
+    return { v, kind: "mc", ch: shuffle([v.m, ...others]) };
+  });
+}
+function kindPick(mode, label) {
+  return `<div class="muted" style="margin-bottom:6px">시험 방식을 골라요</div>
+    <div class="row" style="justify-content:center"><button style="flex:1;min-width:150px" onclick="startTest('${mode}','ko')">✍️ 서술형 ${label}<br><span style="font-size:13px;font-weight:500">뜻을 직접 써요</span></button>
+    <button class="soft" style="flex:1;min-width:150px" onclick="startTest('${mode}','mc')">🔘 객관식 ${label}<br><span style="font-size:13px;font-weight:500">4개 중에서 골라요</span></button></div>`;
+}
 // 한국어 뜻 채점: 뜻이 여러 개면 하나만 맞아도 정답, 어미·조사·비슷한 말은 너그럽게
 function koClean(s) { return String(s).replace(/\([^)]*\)/g, "").replace(/[~∼…]/g, "").replace(/^\s*(을|를|에게|에서|에|의|이|가|와|과|으로|로)\s+/, "").trim(); }
 function meaningOk(ans, m) {
@@ -1256,21 +1294,27 @@ function sameStem(a, x) {
   if (A && A === X) return true;
   return A.length >= 2 && X.length >= 2 && (A.startsWith(X) || X.startsWith(A));
 }
-function startTest(mode) {
+function startTest(mode, kind) {
   const p = cur();
+  kind = kind || "ko";
   const words = mode === "re" ? p.voc.list.filter(v => p.test.wrong.includes(norm(v.w))) : p.voc.list;
   if (!words.length) return toast("시험 볼 단어가 없어요");
-  T = { pid: p.id, mode, items: makeItems(p, words), i: 0, wrong: [], ans: null, ok: null };
+  T = { pid: p.id, mode, items: makeItems(p, words, kind), i: 0, wrong: [], ans: null, ok: null };
   render();
 }
 function testBox(p) {
   const it = T.items[T.i], n = T.items.length;
   const top = `<div class="row"><div style="flex:1"><div class="bar"><i style="width:${T.i / n * 100}%"></i></div></div><span class="muted">${T.i + 1}/${n}</span></div>`;
-  const q = `<div class="muted">영어 단어를 보고 한국어 뜻을 쓰세요</div><div class="big">${esc(it.v.w)}</div>
+  const q = it.kind === "mc"
+    ? `<div class="muted">알맞은 뜻을 고르세요</div><div class="big">${esc(it.v.w)}</div>` + it.ch.map((c, ci) => {
+        const cls = T.ok == null ? "" : c === it.v.m ? "right" : T.ans === ci ? "wrong" : "";
+        return `<button class="choice ${cls}" ${T.ok != null ? "disabled" : ""} onclick="answerMc(${ci})">${NUMS[ci]} ${esc(c)}</button>`;
+      }).join("")
+    : `<div class="muted">영어 단어를 보고 한국어 뜻을 쓰세요</div><div class="big">${esc(it.v.w)}</div>
       <input id="tIn" autocomplete="off" spellcheck="false" placeholder="한국어 뜻" style="font-size:22px;text-align:center" ${T.ok != null ? "disabled" : ""} value="${esc(T.typed || "")}" onkeydown="if(event.key==='Enter'&&!event.isComposing)answerType()">
       ${T.ok == null ? `<button style="margin-top:10px;width:100%" onclick="answerType()">확인</button>` : ""}`;
   const fb = T.ok == null ? "" : `<div class="fb ${T.ok ? "ok" : "no"}">${T.ok ? "⭕ 정답! " + esc(it.v.m) : "❌ 정답: " + esc(it.v.m)}</div>
-    ${T.ok ? "" : `<button class="ghost small" style="margin-bottom:10px" onclick="acceptAns()">내 답도 같은 뜻이에요 (정답 인정)</button>`}
+    ${T.ok || it.kind === "mc" ? "" : `<button class="ghost small" style="margin-bottom:10px" onclick="acceptAns()">내 답도 같은 뜻이에요 (정답 인정)</button>`}
     <button style="width:100%" id="nextB" onclick="nextQ()">${T.i + 1 < n ? "다음 →" : "결과 보기"}</button>`;
   return `<div class="card test">${top}${q}${fb}</div>`;
 }
@@ -1310,11 +1354,11 @@ function vTest(p) {
     const r = T.result;
     return `<div class="card test"><h2>🧪 시험 결과</h2><div class="big">${Math.round(r.right / r.n * 100)}점</div><div>${r.n}개 중 ${r.right}개 정답</div>
       ${p.test.wrong.length ? `<div class="fb no">틀린 단어 ${p.test.wrong.length}개는 오답 재시험에서 다시 봐요</div><button onclick="V.step='re';T=null;render()">🔁 오답 재시험 가기</button>` : `<div class="fb ok">만점! 오답 재시험 스티커까지 받아요 🎉</div>`}
-      <div style="margin-top:10px"><button class="ghost" onclick="startTest('test')">다시 시험보기</button></div></div>`;
+      <div style="margin-top:14px">${kindPick("test", "다시 시험보기")}</div></div>`;
   }
-  return `<div class="card test"><h2>🧪 단어 시험</h2><div class="muted">내 단어장 ${p.voc.list.length}개 · 영어 단어를 보고 한국어 뜻을 써요. 뜻이 여러 개면 하나만 써도 돼요.</div>
+  return `<div class="card test"><h2>🧪 단어 시험</h2><div class="muted">내 단어장 ${p.voc.list.length}개 · 서술형(뜻 쓰기)과 객관식(뜻 고르기) 중에서 골라 봐요.</div>
     ${p.test.score != null ? `<div class="fb ok">지난 점수 ${p.test.score}점 (${esc(p.test.date || "")})</div>` : ""}
-    <button style="margin-top:14px;width:100%" onclick="startTest('test')">시험 시작</button></div>`;
+    <div style="margin-top:14px">${kindPick("test", "시험 시작")}</div></div>`;
 }
 function vRe(p) {
   if (locked(p, "re")) return `<div class="card lock-msg">🔒 먼저 <b>5. 단어 시험</b>을 봐 주세요.</div>`;
@@ -1327,7 +1371,7 @@ function vRe(p) {
   return `<div class="card test"><h2>🔁 오답 재시험</h2>${msg}
     <div class="muted">아직 남은 단어 ${left}개 — 다 맞힐 때까지 다시 봐요!</div>
     <div class="cards" style="margin:12px 0;text-align:center">${wrongWords.map(v => `<div class="fcard" style="height:80px"><div class="fw" style="font-size:18px">${esc(v.w)}</div><div class="muted">${esc(v.m)}</div></div>`).join("")}</div>
-    <button style="width:100%" onclick="startTest('re')">재시험 시작</button></div>`;
+    ${kindPick("re", "재시험 시작")}</div>`;
 }
 
 // ── 진도표
@@ -1345,7 +1389,7 @@ function viewProgress() {
   <div class="card"><h3>지문별 진도</h3>
     ${S.passages.length ? `<div class="tscroll"><table><tr><th class="l">지문</th>${STEPS.map((s, i) => `<th>${i + 1}<br>${s.n}</th>`).join("")}<th>완주</th></tr>${rows}</table></div>` : '<div class="muted">아직 공부한 지문이 없어요.</div>'}</div>
   <div class="card"><h3>내 스티커 판</h3>${all.length ? `<div class="board">${all.map(s => `<span>${s}</span>`).join("")}</div>` : '<div class="muted">단계를 하나 끝낼 때마다 스티커가 붙어요!</div>'}</div>
-  ${S.passages.some(p => p.voc.list.length) ? `<div class="card"><h3>📤 내 구글 시트 단어장으로 옮기기</h3>${vxCard(null)}</div>` : ""}`;
+  ${S.passages.some(p => p.voc.list.length) ? `<div class="card"><h3>📤 내 모든 단어장 저장하기</h3>${vxCard(null)}</div>` : ""}`;
 }
 
 // ── 출석부
