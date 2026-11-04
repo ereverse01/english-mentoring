@@ -1306,10 +1306,10 @@ function viewProgress() {
   const full = S.passages.filter(p => stCount(p) === 6).length;
   const goals = [10, 30, 50, 100, 200];
   const next = goals.find(g => g > all.length) || 300;
-  const rows = S.passages.map(p => `<tr class="clickrow" onclick="openP('${p.id}')"><td class="l"><b>${esc(p.d.title)}</b><div class="muted">${esc(p.level)} · ${esc(p.created)}</div></td>
+  const rows = S.passages.map(p => `<tr class="clickrow" onclick="openP('${p.id}')"><td class="l"><b>${esc(p.d.title)}</b><div class="muted">${esc(p.level)} · ${esc(p.created)}${stCount(p) ? "" : " · 아직 시작 전"}</div></td>
      ${STEPS.map(s => `<td style="font-size:22px">${p.st[s.k] || '<span style="color:#ccc">⬜</span>'}</td>`).join("")}<td style="font-size:22px">${stCount(p) === 6 ? "🏆" : ""}</td></tr>`).join("");
   return `<div class="card"><h2>🏅 나의 진도표</h2>
-    <div class="stats"><div class="stat"><b>${all.length}</b>모은 스티커</div><div class="stat"><b>${S.passages.length}</b>공부한 지문</div><div class="stat"><b>${full}</b>완주한 지문 🏆</div><div class="stat"><b>${Object.keys(S.att).length}</b>출석한 날</div></div>
+    <div class="stats"><div class="stat"><b>${all.length}</b>모은 스티커</div><div class="stat"><b>${S.passages.filter(p => stCount(p) > 0).length}</b>공부한 지문<div class="muted">받은 지문 ${S.passages.length}개</div></div><div class="stat"><b>${full}</b>완주한 지문 🏆</div><div class="stat"><b>${Object.keys(S.att).length}</b>출석한 날</div></div>
     <div style="margin-top:14px"><div class="row" style="justify-content:space-between"><span class="muted">다음 목표: 스티커 ${next}개</span><span class="muted">${all.length}/${next}</span></div><div class="bar"><i style="width:${Math.min(100, all.length / next * 100)}%"></i></div></div></div>
   <div class="card"><h3>지문별 진도</h3>
     ${S.passages.length ? `<div class="tscroll"><table><tr><th class="l">지문</th>${STEPS.map((s, i) => `<th>${i + 1}<br>${s.n}</th>`).join("")}<th>완주</th></tr>${rows}</table></div>` : '<div class="muted">아직 공부한 지문이 없어요.</div>'}</div>
@@ -1386,12 +1386,12 @@ function teacherView() {
     const open = TD.open === s.sid;
     const det = open ? `<tr><td colspan="${6 + dates.length}" style="background:#faf8f3"><table class="tg"><tr><th class="l">지문</th><th>수준</th><th>시작일</th><th>완료 단계</th><th>스티커</th><th>번역</th><th>문제</th><th>단어</th><th>저장</th></tr>
       ${s.ps.map(p => `<tr><td class="l">${esc(p.title)}</td><td>${esc(p.level)}</td><td>${esc(p.created)}</td><td class="l" style="font-size:13px">${esc(p.steps)}</td><td>${p.st}/6</td><td>${esc(p.tr)}</td><td>${esc(p.quiz)}</td><td>${esc(p.test)}</td><td style="font-size:12px">${esc(String(p.time).slice(0, 16).replace("T", " "))}</td></tr>`).join("")}</table></td></tr>` : "";
-    return `<tr class="clickrow" onclick="TD.open=TD.open==='${s.sid}'?null:'${s.sid}';teacherView()"><td>${esc(s.sid)}</td><td class="l"><b>${esc(s.name)}</b></td><td>${s.ps.length}</td><td>${full}</td><td>🏅 ${st}</td><td>${Object.keys(s.att).length}</td>
+    return `<tr class="clickrow" onclick="TD.open=TD.open==='${s.sid}'?null:'${s.sid}';teacherView()"><td>${esc(s.sid)}</td><td class="l"><b>${esc(s.name)}</b></td><td>${s.ps.filter(p => +p.st > 0).length}<span class="muted" style="font-size:12px"> /${s.ps.length}</span></td><td>${full}</td><td>🏅 ${st}</td><td>${Object.keys(s.att).length}</td>
       ${dates.map(d => `<td class="${s.att[d] ? "yes" : ""}">${s.att[d] ? "✔" : ""}</td>`).join("")}</tr>${det}`;
   }).join("");
   app.innerHTML = `<header><div class="hbar"><div class="logo">👩‍🏫 영어 독해 멘토링 · 선생님</div><div class="who"><button class="ghost small" onclick="tLoad()">새로고침</button><button class="ghost small" onclick="tCopy()">엑셀용 복사</button></div></div></header>
   <div class="wrap">${qnaHTML(f)}<div class="card"><div class="row"><input id="tf" placeholder="학번 앞자리(예: 103)나 이름으로 찾기" value="${esc(f)}" style="max-width:320px"><span class="muted">학생 ${shown.length}명 · 줄을 누르면 지문별 기록</span></div>
-    <div class="tscroll" style="margin-top:10px"><table class="tg"><tr><th>학번</th><th class="l">이름</th><th>지문</th><th>완주</th><th>스티커</th><th>출석일</th>${dates.map(d => `<th>${d.slice(5).replace("-", "/")}</th>`).join("")}</tr>${rows}</table></div></div></div>`;
+    <div class="tscroll" style="margin-top:10px"><table class="tg"><tr><th>학번</th><th class="l">이름</th><th>공부한 지문<br>/받은 지문</th><th>완주</th><th>스티커</th><th>출석일</th>${dates.map(d => `<th>${d.slice(5).replace("-", "/")}</th>`).join("")}</tr>${rows}</table></div></div></div>`;
   document.querySelectorAll("[data-qa]").forEach(el => el.oninput = () => { (TD.drafts = TD.drafts || {})[el.dataset.qa] = el.value; });
   const tf = document.getElementById("tf");
   tf.oninput = () => { TD.filter = tf.value; const pos = tf.selectionStart; teacherView(); const n = document.getElementById("tf"); n.focus(); n.setSelectionRange(pos, pos); };
