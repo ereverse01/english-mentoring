@@ -878,7 +878,7 @@ function vStruct(p) {
   }
   return `<div class="card"><h2>🖍️ ① 형광펜으로 표시하기</h2>
      <div class="muted">펜을 고르고 단어를 눌러요. 같은 펜으로 한 번 더 누르면 지워져요.</div>
-     <div class="pens" style="margin-top:10px">${pens}<button class="ghost small" onclick="hintRepeat()">💡 반복 단어 힌트</button></div>
+     <div class="pens" style="margin-top:10px">${pens}</div>
      <div class="penhelp">${PEN_HELP[V.pen] || ""}</div>
      <div class="passage" id="hlBox">${ph}</div></div>
    <div class="card"><h2>🎯 ② 글의 주제 쓰기</h2>
@@ -920,7 +920,6 @@ function structHTML(p) {
       });
       open.sort((x, y) => y[0] - x[0]); close.sort((x, y) => x[0] - y[0]);
       const cls = [hl[k] || "", ul[k] ? "u" : ""];
-      if (V.hint && V.hint[k] && !hl[k] && !ul[k]) cls.push("hint");
       if (sel && sel.i === i && j >= sel.s && j <= (sel.e == null ? sel.s : sel.e)) cls.push("sel");
       return open.map(x => x[1]).join("") + `<span class="w ${cls.join(" ")}" data-i="${i}" data-j="${j}">${esc(t)}</span>` + close.map(x => x[1]).join("");
     }).join("");
@@ -1007,18 +1006,6 @@ function diagram(p, roles, topic) {
       <div class="kw">${words.length ? words.join("") : `<span style="background:none;color:#888;font-size:14px">${esc(first)}</span>`}</div></div>`;
   });
   return `<div class="diagram"><div class="dtopic">📌 주제: ${esc(topic || "(주제를 써 주세요)")}</div><div class="arrow">↓</div>${nodes.join('<div class="arrow">↓</div>')}</div>`;
-}
-function hintRepeat() {
-  const p = cur(), cnt = {}, pos = {};
-  p.d.sentences.forEach((s, i) => toks(s.en).forEach((t, j) => {
-    if (!isW(t)) return; const w = norm(t); if (STOP.has(w) || w.length < 3) return;
-    const b = stems(w).sort((a, c) => a.length - c.length)[0];
-    cnt[b] = (cnt[b] || 0) + 1; (pos[b] = pos[b] || []).push(i + "-" + j);
-  }));
-  V.hint = {};
-  Object.keys(cnt).forEach(b => { if (cnt[b] >= 2) pos[b].forEach(k => V.hint[k] = 1); });
-  const n = Object.keys(cnt).filter(b => cnt[b] >= 2).length;
-  render(); toast(n ? "주황 물결 밑줄 = 두 번 이상 나온 단어 " + n + "개" : "반복되는 단어가 없어요");
 }
 function finishStruct() {
   const p = cur();
