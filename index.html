@@ -114,6 +114,9 @@ svg.arr{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
 .vrow b{font-family:Georgia,serif;font-size:18px}
 .vrow button{padding:6px;background:#fff;color:var(--bad);border:1.5px solid var(--line)}
 @media (max-width:560px){.vrow{grid-template-columns:1fr 40px}.vrow input{grid-column:1/-1;grid-row:2}}
+.gw{position:relative;border-bottom:2px dotted #9aa8c7;cursor:help}
+.gw:hover::after,.gw.show::after{content:attr(data-tip);position:absolute;left:50%;bottom:calc(100% + 6px);transform:translateX(-50%);background:var(--ink);color:#fff;font-family:"Pretendard","Malgun Gothic",system-ui,sans-serif;font-size:15px;font-weight:600;line-height:1.4;padding:6px 10px;border-radius:8px;white-space:nowrap;z-index:15;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.18)}
+.gw:hover,.gw.show{background:#eef3ff}
 .vpairs{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:6px 14px}
 .vpair{display:grid;grid-template-columns:minmax(110px,auto) 1fr;gap:10px;align-items:baseline;border-bottom:1px dashed var(--line);padding:6px 2px}
 .vpair b{font-family:Georgia,serif;font-size:18px}
@@ -637,7 +640,7 @@ function vTr(p) {
         ${g ? `<div class="explain">🤖 ChatGPT 채점 <b>${esc(g.score)}/10</b> · ${esc(g.comment)}</div>` : ""}
         <div class="selfb"><span class="muted">스스로 평가</span>${["⭕ 같은 뜻", "🔺 조금 달라요", "❌ 틀렸어요"].map((l, x) => `<button class="${p.tr.self[i] === x ? "on" : ""}" onclick="selfEval(${i},${x})">${l}</button>`).join("")}</div>`;
     }
-    return `<div class="sbox"><div class="en"><span class="num">${i + 1}</span>${esc(s.en)}</div>
+    return `<div class="sbox"><div class="en"><span class="num">${i + 1}</span>${glossHTML(p, s.en)}</div>
       <textarea data-tr="${i}" placeholder="한국어로 번역해 보세요" style="margin-top:8px;min-height:60px">${esc(p.tr.a[i] || "")}</textarea>
       <div class="row" style="margin-top:6px"><button class="soft small" onclick="gradeTr(${i})">${sc != null ? "다시 채점" : "채점하기"}</button></div>${res}</div>`;
   }).join("");
@@ -653,6 +656,20 @@ function vTr(p) {
     <textarea id="gIn" placeholder='ChatGPT의 답 { "results": ... } 을 붙여넣기' style="margin-top:8px;font-size:14px"></textarea>
     <div class="row" style="margin-top:8px"><button class="small" onclick="addGpt()">결과 넣기</button></div></div>` : ""}`;
 }
+function glossHTML(p, en) {
+  return toks(en).map(t => {
+    if (!isW(t)) return esc(t);
+    const g = gloss(p, t);
+    if (!g) return esc(t);
+    const tip = norm(g.w) === norm(t) ? g.m : g.w + " : " + g.m;
+    return `<span class="gw" tabindex="0" data-tip="${esc(tip)}">${esc(t)}</span>`;
+  }).join("");
+}
+document.addEventListener("click", e => {
+  const g = e.target.closest && e.target.closest(".gw");
+  document.querySelectorAll(".gw.show").forEach(x => { if (x !== g) x.classList.remove("show"); });
+  if (g) g.classList.toggle("show");
+});
 function trInput(i, v) { const p = cur(); p.tr.a[i] = v; saveLocal(); }
 function gradeTr(i, quiet) {
   const p = cur(), a = (p.tr.a[i] || "").trim();
