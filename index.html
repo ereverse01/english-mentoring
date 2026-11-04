@@ -228,12 +228,12 @@ function loadData(me) {
   try { d = JSON.parse(localStorage.getItem(dataKey(me.sid)) || "null"); } catch (e) {}
   d = d || { passages: [], att: {} };
   d.me = me;
-  d.passages = d.passages || []; d.att = d.att || {};
+  d.passages = d.passages || []; d.att = d.att || {}; d.qs = d.qs || []; d.qseen = d.qseen || {};
   return d;
 }
 function saveLocal() {
   if (!S) return;
-  try { localStorage.setItem(dataKey(S.me.sid), JSON.stringify({ passages: S.passages, att: S.att })); } catch (e) { toast("기기 저장 공간이 부족해요"); }
+  try { localStorage.setItem(dataKey(S.me.sid), JSON.stringify({ passages: S.passages, att: S.att, qs: S.qs, qseen: S.qseen })); } catch (e) { toast("기기 저장 공간이 부족해요"); }
 }
 function touch(p) { p.updated = Date.now(); saveLocal(); queuePush(p); }
 
@@ -285,6 +285,7 @@ async function pull() {
     S.passages.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     if (changed) { saveLocal(); render(); }
     setSync("ok");
+    loadQs();
   } catch (e) { setSync("err"); }
 }
 function setSync(s) {
@@ -566,7 +567,13 @@ function viewHome() {
      <div class="t" style="margin-top:6px">${esc(p.d.title)}</div>
      <div class="slots">${STEPS.map(s => `<div class="slot ${p.st[s.k] ? "got" : ""}" title="${s.n}">${p.st[s.k] || ""}</div>`).join("")}${stCount(p) === 6 ? '<div class="slot got">🏆</div>' : ""}</div>
    </div>`).join("");
-  return `<div class="card">
+  const fresh = S.qs.filter(q => q.a && !S.qseen[q.qid]);
+  const banner = fresh.length ? `<div class="card" style="border:2px solid var(--pri);background:#f4f7ff"><h3>📬 선생님 답변이 ${fresh.length}개 왔어요!</h3>
+    ${fresh.map(q => `<div style="border-top:1px dashed var(--line);padding:8px 0"><div class="muted">${esc(q.title)} · ${esc(q.step)}</div>
+      <div><b>🙋 ${esc(q.q)}</b></div><div class="model" style="background:#eef3ff"><b>👩‍🏫 선생님</b> ${esc(q.a)}</div>
+      <div class="row" style="margin-top:6px"><button class="small" onclick="S.qseen['${q.qid}']=1;saveLocal();render()">확인했어요</button>
+      ${S.passages.some(p => p.id === q.pid) ? `<button class="ghost small" onclick="openQ('${q.pid}')">지문 열기</button>` : ""}</div></div>`).join("")}</div>` : "";
+  return `${banner}<div class="card">
     <h2>✨ 새 지문 받기</h2>
     <div class="prompt-step"><span class="step-no">1</span><div><b>내 수준과 주제를 골라요</b>
       <div class="chips" style="margin:6px 0">${lvChips}</div><div class="chips">${tpChips}</div></div></div>
@@ -627,7 +634,63 @@ function viewPassage() {
      <button class="ghost small" onclick="delP()">🗑 지문 지우기</button></div>
    <div class="card" style="padding:14px 18px"><div class="row"><span class="badge">${esc(p.level)}</span><span class="muted">${esc(p.created)}</span><span class="muted">스티커 ${stCount(p)}/6</span></div>
    <h2 style="margin:6px 0 10px">${esc(p.d.title)}</h2><div class="steps">${tabs}</div></div>
-   ${body}`;
+   ${body}${askCard(p)}`;
+}
+
+// ── 선생님께 질문
+async function loadQs(show) {
+  if (!SHEET_URL || !S) return;
+  try {
+    const r = await api({ action: "myq", sid: S.me.sid, name: S.me.name });
+    if (!r.ok) return;
+    const before = JSON.stringify(S.qs);
+    S.qs = (r.rows || []).sort((a, b) => String(b.time).localeCompare(String(a.time)));
+    saveLocal();
+    if (JSON.stringify(S.qs) !== before) render();
+    if (show) toast(S.qs.filter(q => q.a).length ? "선생님 답변을 확인했어요" : "아직 새 답변이 없어요");
+  } catch (e) { if (show) toast("불러오지 못했어요"); }
+}
+function askAbout(i) {
+  V.askSent = i;
+  render();
+  const el = document.getElementById("askIn"); if (el) { el.scrollIntoView({ block: "center" }); el.focus(); }
+}
+function askCard(p) {
+  const mine = S.qs.filter(q => q.pid === p.id);
+  let seen = false;
+  mine.forEach(q => { if (q.a && !S.qseen[q.qid]) { S.qseen[q.qid] = 1; seen = true; } });
+  if (seen) setTimeout(saveLocal, 0);
+  const opts = p.d.sentences.map((s, i) => `<option value="${i}" ${V.askSent === i ? "selected" : ""}>${i + 1}. ${esc(s.en.slice(0, 60))}${s.en.length > 60 ? "…" : ""}</option>`).join("");
+  const list = mine.map(q => `<div class="sbox" style="background:#fff">
+      <div class="muted">${esc(String(q.time).slice(0, 10))} · ${esc(q.step)}</div>
+      ${q.sent ? `<div class="en" style="font-size:15px;color:var(--sub)">“${esc(q.sent)}”</div>` : ""}
+      <div><b>🙋 ${esc(q.q)}</b></div>
+      ${q.a ? `<div class="model" style="background:#eef3ff"><b>👩‍🏫 선생님</b> ${esc(q.a)}</div>` : `<div class="muted" style="margin-top:4px">⏳ 선생님 답변을 기다리는 중이에요</div>`}</div>`).join("");
+  return `<div class="card" id="askCard"><h3>🙋 선생님께 질문하기</h3>
+    <div class="muted">해석이 잘 안 되는 문장, 문법, 단어, 문제 해설 등 궁금한 것을 적어 보내요.</div>
+    <select id="askSent" style="margin-top:8px"><option value="">관련 문장 고르기 (선택)</option>${opts}</select>
+    <textarea id="askIn" style="margin-top:8px" placeholder="예: 3번 문장에서 they가 누구를 가리키는지 모르겠어요."></textarea>
+    <div class="row" style="margin-top:8px"><button onclick="sendQ()">📨 선생님께 보내기</button>${mine.length ? `<button class="ghost small" onclick="loadQs(true)">🔄 답변 확인</button>` : ""}</div>
+    ${list ? `<div style="margin-top:10px">${list}</div>` : ""}</div>`;
+}
+function openQ(pid) {
+  openP(pid);
+  const c = document.getElementById("askCard"); if (c) c.scrollIntoView();
+}
+async function sendQ() {
+  const p = cur(), q = document.getElementById("askIn").value.trim();
+  if (!q) return toast("질문을 써 주세요");
+  if (!SHEET_URL) return toast("구글 시트가 연결되지 않아 보낼 수 없어요");
+  const si = document.getElementById("askSent").value;
+  const sent = si === "" ? "" : (+si + 1) + ". " + p.d.sentences[+si].en;
+  const step = STEPS.find(s => s.k === V.step).n;
+  toast("보내는 중…");
+  try {
+    const r = await api({ action: "ask", sid: S.me.sid, name: S.me.name, q: { pid: p.id, title: p.d.title, step, sent, q } });
+    if (!r.ok) throw new Error();
+    S.qs.unshift({ qid: r.qid, time: new Date().toISOString(), sid: S.me.sid, name: S.me.name, pid: p.id, title: p.d.title, step, sent, q, a: "" });
+    V.askSent = undefined; markAtt(false); saveLocal(); render(); toast("선생님께 보냈어요!");
+  } catch (e) { toast("보내지 못했어요. 인터넷 연결을 확인해 주세요"); }
 }
 
 // 1. 문장 번역
@@ -679,7 +742,7 @@ function vTr(p) {
     }
     return `<div class="sbox"><div class="en"><span class="num">${i + 1}</span>${glossHTML(p, s.en)}</div>
       <textarea data-tr="${i}" placeholder="한국어로 번역해 보세요" style="margin-top:8px;min-height:60px">${esc(p.tr.a[i] || "")}</textarea>
-      <div class="row" style="margin-top:6px"><button class="soft small" onclick="gradeTr(${i})">${sc != null ? "다시 채점" : "채점하기"}</button></div>${res}</div>`;
+      <div class="row" style="margin-top:6px"><button class="soft small" onclick="gradeTr(${i})">${sc != null ? "다시 채점" : "채점하기"}</button><button class="ghost small" onclick="askAbout(${i})">🙋 이 문장 질문</button></div>${res}</div>`;
   }).join("");
   return `${skimBox}<div class="card"><h2>✍️ 문장 하나하나 번역하기</h2>
     <div class="muted">한 문장씩 한국어로 써 보고 <b>채점하기</b>를 눌러요. 핵심어가 들어갔는지, 모범 번역과 얼마나 비슷한지로 점수를 매겨요. 뜻이 같으면 표현은 달라도 괜찮아요!</div>
@@ -1240,10 +1303,41 @@ function teacherView() {
       ${dates.map(d => `<td class="${s.att[d] ? "yes" : ""}">${s.att[d] ? "✔" : ""}</td>`).join("")}</tr>${det}`;
   }).join("");
   app.innerHTML = `<header><div class="hbar"><div class="logo">👩‍🏫 영어 독해 멘토링 · 선생님</div><div class="who"><button class="ghost small" onclick="tLoad()">새로고침</button><button class="ghost small" onclick="tCopy()">엑셀용 복사</button></div></div></header>
-  <div class="wrap"><div class="card"><div class="row"><input id="tf" placeholder="학번 앞자리(예: 103)나 이름으로 찾기" value="${esc(f)}" style="max-width:320px"><span class="muted">학생 ${shown.length}명 · 줄을 누르면 지문별 기록</span></div>
+  <div class="wrap">${qnaHTML(f)}<div class="card"><div class="row"><input id="tf" placeholder="학번 앞자리(예: 103)나 이름으로 찾기" value="${esc(f)}" style="max-width:320px"><span class="muted">학생 ${shown.length}명 · 줄을 누르면 지문별 기록</span></div>
     <div class="tscroll" style="margin-top:10px"><table class="tg"><tr><th>학번</th><th class="l">이름</th><th>지문</th><th>완주</th><th>스티커</th><th>출석일</th>${dates.map(d => `<th>${d.slice(5).replace("-", "/")}</th>`).join("")}</tr>${rows}</table></div></div></div>`;
+  document.querySelectorAll("[data-qa]").forEach(el => el.oninput = () => { (TD.drafts = TD.drafts || {})[el.dataset.qa] = el.value; });
   const tf = document.getElementById("tf");
   tf.oninput = () => { TD.filter = tf.value; const pos = tf.selectionStart; teacherView(); const n = document.getElementById("tf"); n.focus(); n.setSelectionRange(pos, pos); };
+}
+function qnaHTML(f) {
+  const all = (TD.qna || []).filter(q => !f || q.sid.startsWith(f) || q.name.includes(f));
+  const wait = all.filter(q => !q.a).sort((a, b) => String(a.time).localeCompare(String(b.time)));
+  const done = all.filter(q => q.a).sort((a, b) => String(b.atime).localeCompare(String(a.atime)));
+  const show = TD.qAll ? wait.concat(done) : wait;
+  const item = q => {
+    const d = (TD.drafts || {})[q.qid];
+    return `<div class="sbox" style="background:#fff;${q.a ? "" : "border-color:#f2b46b"}">
+      <div class="muted">${esc(q.sid)} <b style="color:var(--ink)">${esc(q.name)}</b> · ${esc(q.title)} · ${esc(q.step)} · ${esc(String(q.time).slice(0, 16).replace("T", " "))}</div>
+      ${q.sent ? `<div class="en" style="font-size:15px;color:var(--sub)">“${esc(q.sent)}”</div>` : ""}
+      <div style="margin:4px 0"><b>🙋 ${esc(q.q)}</b></div>
+      <textarea data-qa="${q.qid}" style="min-height:56px" placeholder="답변을 써 주세요">${esc(d != null ? d : q.a)}</textarea>
+      <div class="row" style="margin-top:6px"><button class="small" onclick="tAnswer('${q.qid}')">${q.a ? "답변 고치기" : "답변 보내기"}</button>${q.a ? `<span class="muted">✅ 답변함</span>` : ""}</div></div>`;
+  };
+  return `<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">🙋 학생 질문 <span class="badge" style="font-size:14px">답변 대기 ${wait.length}</span></h2>
+    <button class="ghost small" onclick="TD.qAll=!TD.qAll;teacherView()">${TD.qAll ? "답변 대기만 보기" : `답변한 것도 보기 (${done.length})`}</button></div>
+    ${show.length ? show.map(item).join("") : `<div class="muted" style="margin-top:8px">${wait.length ? "" : "답변을 기다리는 질문이 없어요."}</div>`}</div>`;
+}
+async function tAnswer(qid) {
+  const el = document.querySelector(`[data-qa="${qid}"]`), a = el.value.trim();
+  if (!a) return toast("답변을 써 주세요");
+  toast("보내는 중…");
+  try {
+    const r = await api({ action: "answer", pw: sessionStorage.getItem("em-tpw"), qid, a });
+    if (!r.ok) return toast(r.error === "pw" ? "암호를 다시 확인해 주세요" : "저장하지 못했어요");
+    const q = TD.qna.find(x => x.qid === qid); q.a = a; q.atime = new Date().toISOString();
+    if (TD.drafts) delete TD.drafts[qid];
+    teacherView(); toast("답변을 보냈어요");
+  } catch (e) { toast("연결에 실패했어요"); }
 }
 async function tLoad() {
   const el = document.getElementById("tpw");
@@ -1254,7 +1348,7 @@ async function tLoad() {
     const r = await api({ action: "list", pw });
     if (!r.ok) { sessionStorage.removeItem("em-tpw"); TD = null; teacherView(); return toast(r.error === "pw" ? "암호가 달라요" : "불러오지 못했어요"); }
     sessionStorage.setItem("em-tpw", pw);
-    TD = Object.assign(TD || {}, { rows: r.rows, att: r.att });
+    TD = Object.assign(TD || {}, { rows: r.rows, att: r.att, qna: r.qna || [] });
     teacherView();
   } catch (e) { toast("연결에 실패했어요"); }
 }
