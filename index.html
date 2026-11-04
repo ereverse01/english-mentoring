@@ -708,7 +708,8 @@ function vSkim(p) {
   const sk = p.skim || {};
   return `<div class="card"><h2>👀 먼저 글 전체를 훑어 읽어요 (Skimming)</h2>
     <div class="muted">한 단어 한 단어 해석하지 말고, 빠르게 읽으면서 <b>무엇에 대한 글인지</b>만 잡아 봐요. 모르겠으면 비워 둬도 괜찮아요!</div>
-    <div class="qtext" style="margin-top:12px">${esc(p.d.sentences.map(s => s.en).join(" "))}</div>
+    <div class="muted" style="margin-top:8px">점선 밑줄 단어에 마우스를 올리거나 누르면 뜻이 보여요.</div>
+    <div class="qtext" style="margin-top:6px">${p.d.sentences.map(s => glossHTML(p, s.en)).join(" ")}</div>
     <h3 style="margin-top:14px">🔑 이 글의 키워드는? <span class="muted">(영어 단어 그대로, 여러 개면 쉼표로)</span></h3>
     <input id="skKw" value="${esc(sk.kw || "")}" placeholder="예: boredom, creative" autocapitalize="off" spellcheck="false">
     <h3 style="margin-top:14px">🎯 이 글의 주제는? <span class="muted">(한국어로 짧게)</span></h3>
