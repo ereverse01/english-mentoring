@@ -1169,8 +1169,7 @@ function vxCard(pid) {
   const ps = (pid ? S.passages.filter(p => p.id === pid) : S.passages).filter(p => p.voc.list.length);
   if (!ps.length) return "";
   const arg = pid ? `'${pid}'` : "null";
-  const sheetBtns = `<button onclick="toMySheet(null)">🟩 내 구글 시트로 보내기 (모든 지문 쌓기)</button>`
-    + (pid ? `<button class="ghost small" onclick="toMySheet('${pid}')">이 지문만 따로 탭으로</button>` : "");
+  const sheetBtns = `<button onclick="toMySheet(null)">🟩 내 구글 시트로 보내기 (모든 지문 쌓기)</button>`;
   return `<div class="hint-box" style="margin-top:14px"><b>📤 내 단어장 저장하기</b>
     <div class="muted" style="margin:4px 0 8px">단어와 뜻을 시험 결과별로 묶어서(❌ 불통 → ✅ 통과 → ⬜ 아직 안 본 단어) 저장해요. ${pid ? "" : "엑셀·PDF는 지문마다 다른 시트·쪽으로 나뉘어요."}</div>
     <div class="row"><button class="ghost" onclick="saveXlsx(${arg})">📊 엑셀 저장</button><button class="ghost" onclick="savePdf(${arg})">📄 PDF 저장</button></div>
@@ -1221,7 +1220,8 @@ async function toMySheet(pid) {
     });
   }
   const win = window.open("", "_blank"); // 팝업 차단을 피하려고 클릭 직후 먼저 연다
-  const payload = JSON.stringify({ title, name: S.me.name, book: S.me.name + " 단어장", rows });
+  const book = S.me.name + " 단어장";
+  const payload = JSON.stringify({ title, name: S.me.name, book, file: book, rows }); // file: 예전 버전 Apps Script 호환
   const url = MY_SHEETS_URL + "?" + await packForUrl(payload);
   if (win) { win.opener = null; win.location.href = url; } else location.href = url;
   alert('새 탭에서 내 구글 시트를 만들고 있어요.\n처음 한 번은 학교 구글 계정을 고르고 [허용]을 눌러 주세요. (허용한 뒤 시트가 안 생기면 버튼을 한 번 더 누르세요)\n완료되면 [내 구글 시트 열기]를 누르세요.');
