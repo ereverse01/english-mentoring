@@ -612,7 +612,14 @@ function locked(p, k) {
 function viewPassage() {
   const p = cur(); if (!p) { V.pid = null; return viewHome(); }
   const tabs = STEPS.map((s, i) => `<button class="stepb ${V.step === s.k ? "on" : ""} ${p.st[s.k] ? "done" : ""} ${locked(p, s.k) ? "lock" : ""}" onclick="V.step='${s.k}';T=null;render()">${p.st[s.k] || s.i} ${i + 1}. ${s.n}</button>`).join("");
-  const body = { tr: vTr, quiz: vQuiz, struct: vStruct, voc: vVoc, test: vTest, re: vRe }[V.step](p);
+  let body = { tr: vTr, quiz: vQuiz, struct: vStruct, voc: vVoc, test: vTest, re: vRe }[V.step](p);
+  const si = STEPS.findIndex(s => s.k === V.step), nx = STEPS[si + 1];
+  const inTest = T && T.items && T.pid === p.id;
+  if (p.st[V.step] && !inTest) body += nx
+    ? `<div class="card" style="text-align:center"><div class="muted">${p.st[V.step]} ${STEPS[si].n} 완료! 다음 활동으로 가 볼까요?</div>
+       <button style="margin-top:10px;font-size:18px;padding:12px 24px" onclick="V.step='${nx.k}';T=null;render();window.scrollTo(0,0)">다음 활동 ➡️ ${si + 2}. ${nx.n}</button></div>`
+    : `<div class="card" style="text-align:center"><div class="muted">이 지문의 마지막 활동이에요.</div>
+       <div class="row" style="justify-content:center;margin-top:10px"><button onclick="go('prog')">🏅 진도표 보기</button><button class="ghost" onclick="go('home')">📚 새 지문 받기</button></div></div>`;
   return `<div class="row" style="margin-top:14px;justify-content:space-between">
      <button class="ghost small" onclick="go('home')">← 지문 목록</button>
      <button class="ghost small" onclick="delP()">🗑 지문 지우기</button></div>
