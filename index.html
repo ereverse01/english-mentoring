@@ -230,12 +230,12 @@ function loadData(me) {
   try { d = JSON.parse(localStorage.getItem(dataKey(me.sid)) || "null"); } catch (e) {}
   d = d || { passages: [], att: {} };
   d.me = me;
-  d.passages = d.passages || []; d.att = d.att || {}; d.qs = d.qs || []; d.qseen = d.qseen || {};
+  d.passages = d.passages || []; d.att = d.att || {}; d.qs = d.qs || []; d.qseen = d.qseen || {}; d.vx = d.vx || {}; d.mySheet = d.mySheet || "";
   return d;
 }
 function saveLocal() {
   if (!S) return;
-  try { localStorage.setItem(dataKey(S.me.sid), JSON.stringify({ passages: S.passages, att: S.att, qs: S.qs, qseen: S.qseen })); } catch (e) { toast("기기 저장 공간이 부족해요"); }
+  try { localStorage.setItem(dataKey(S.me.sid), JSON.stringify({ passages: S.passages, att: S.att, qs: S.qs, qseen: S.qseen, vx: S.vx, mySheet: S.mySheet })); } catch (e) { toast("기기 저장 공간이 부족해요"); }
 }
 function touch(p) { p.updated = Date.now(); saveLocal(); queuePush(p); }
 
@@ -1124,25 +1124,56 @@ function vocGroups(p) {
   const g = { "통과": [], "불통": [], "미응시": [] };
   p.voc.list.forEach(v => g[wordStatus(p, v)].push(v));
   const box = k => g[k].length ? `<div style="margin-top:12px"><div class="row" style="justify-content:space-between"><b style="color:${WS[k][1]}">${WS[k][0]} ${k === "미응시" ? "아직 시험 안 본" : k} 단어 ${g[k].length}개</b>
-      ${SHEET_URL ? `<button class="ghost small" onclick="sendVocab('${p.id}','${k}')">📤 ${k} 단어만 보내기</button>` : ""}</div>
+      <button class="ghost small" onclick="copyVocab('${p.id}','${k}')">📋 ${k} 단어만 복사</button></div>
       <div class="vpairs" style="margin-top:6px">${g[k].map(v => `<div class="vpair"><b>${esc(v.w)}</b><span>${esc(v.m)}</span></div>`).join("")}</div></div>` : "";
   return `<div class="card"><h2>🗂️ 시험 결과로 나눈 단어장</h2>
-    <div class="muted">단어 시험에서 맞힌 단어(통과)와 틀린 단어(불통)를 나눠 보여 줘요. 오답 재시험에서 맞히면 통과로 옮겨 가요.</div>
+    <div class="muted">단어 시험에서 맞힌 단어(통과)와 틀린 단어(불통)를 나눠 보여 줘요. 오답 재시험에서 맞히면 통과로 옮겨 가요. 묶음별 복사도 내 구글 시트에 붙여넣을 수 있어요.</div>
     ${box("불통")}${box("통과")}${box("미응시")}
-    ${SHEET_URL ? `<div class="hint-box" style="margin-top:14px">📤 <b>구글 시트로 보내기</b> — 선생님 구글 시트의 <b>"단어장 ${esc(S.me.sid)} ${esc(S.me.name)}"</b> 탭에 쌓여요. 이미 보낸 단어는 시험 결과·뜻만 새로 바뀌어요.
-      <div class="row" style="margin-top:8px"><button onclick="sendVocab('${p.id}')">📤 이 지문 단어 모두 보내기</button></div></div>` : ""}</div>`;
+    ${vxCard(p.id)}</div>`;
 }
-async function sendVocab(pid, only) {
-  const ps = pid ? S.passages.filter(p => p.id === pid) : S.passages;
-  const words = [];
-  ps.forEach(p => p.voc.list.forEach(v => { const res = wordStatus(p, v); if (!only || res === only) words.push({ w: v.w, m: v.m, res, title: p.d.title }); }));
-  if (!words.length) return toast("보낼 단어가 없어요");
-  toast("보내는 중…");
-  try {
-    const r = await api({ action: "vocab", sid: S.me.sid, name: S.me.name, words });
-    if (!r.ok) throw new Error();
-    toast(`구글 시트에 보냈어요 (새 단어 ${r.added}개, 고친 단어 ${r.updated}개)`);
-  } catch (e) { toast("보내지 못했어요. 잠시 뒤 다시 해 주세요"); }
+// ── 내 구글 시트 단어장으로 옮기기 (복사 → 내 시트 맨 아래에 붙여넣기, 이미 옮긴 단어는 기억)
+function vxRows(pid, mode) {
+  const ps = pid ? S.passages.filter(p => p.id === pid) : S.passages.slice().reverse();
+  const out = [], seen = new Set();
+  ps.forEach(p => p.voc.list.forEach(v => {
+    const key = norm(v.w), res = wordStatus(p, v);
+    if (seen.has(key)) return;
+    if (mode === "new" && S.vx[key]) return;
+    seen.add(key);
+    if ((mode === "통과" || mode === "불통" || mode === "미응시") && res !== mode) return;
+    out.push({ key, row: [today(), p.d.title, v.w, v.m, res] });
+  }));
+  return out;
+}
+function vxCard(pid) {
+  const fresh = vxRows(pid, "new").length;
+  const sheet = S.mySheet
+    ? `<div class="row"><button class="ghost small" onclick="window.open(S.mySheet,'_blank')">📂 내 구글 시트 열기</button><button class="ghost small" onclick="setMySheet()">주소 바꾸기</button></div>`
+    : `<div class="row"><button class="ghost small" onclick="window.open('https://sheets.new','_blank')">📄 처음 한 번: 새 구글 시트 만들기</button><button class="ghost small" onclick="setMySheet()">🔗 내 시트 주소 저장</button></div>
+       <div class="muted" style="margin-top:4px">새 시트를 만든 뒤 주소창의 주소를 복사해서 <b>내 시트 주소 저장</b>에 넣어 두면, 다음부터 바로 열 수 있어요.</div>`;
+  return `<div class="hint-box" style="margin-top:14px"><b>📤 내 구글 시트 단어장으로 옮기기</b>
+    <div class="muted" style="margin:4px 0 8px">복사한 뒤 내 구글 시트에서 <b>A열 맨 아래 빈 칸</b>을 누르고 붙여넣기(Ctrl+V, 태블릿은 길게 눌러 붙여넣기) 하면 날짜·지문·단어·뜻·시험 결과가 한 줄씩 쌓여요. 이 기기에서 이미 옮긴 단어는 기억해 두었다가 <b>새 단어만</b> 복사해 줘요.</div>
+    ${sheet}
+    <div class="row" style="margin-top:8px"><button onclick="copyVocab(${pid ? `'${pid}'` : "null"},'new')" ${fresh ? "" : "disabled"}>📋 새 단어 ${fresh}개 복사</button>
+    <button class="ghost small" onclick="copyVocab(${pid ? `'${pid}'` : "null"},'all')">전체 다시 복사</button></div></div>`;
+}
+function setMySheet() {
+  const u = prompt("내 구글 시트 주소를 붙여넣어 주세요 (https://docs.google.com/spreadsheets/...)", S.mySheet || "");
+  if (u == null) return;
+  if (u.trim() && !/^https:\/\/docs\.google\.com\/spreadsheets\//.test(u.trim())) return toast("구글 시트 주소가 아니에요");
+  S.mySheet = u.trim(); saveLocal(); render(); toast(S.mySheet ? "내 시트 주소를 저장했어요" : "주소를 지웠어요");
+}
+function copyVocab(pid, mode) {
+  const rows = vxRows(pid, mode);
+  if (!rows.length) return toast(mode === "new" ? "새로 옮길 단어가 없어요" : "복사할 단어가 없어요");
+  const first = !Object.keys(S.vx).length;
+  const lines = (first ? [["날짜", "지문", "단어", "뜻", "시험 결과"]] : []).concat(rows.map(r => r.row)).map(r => r.map(c => String(c).replace(/[\t\n]/g, " ")).join("\t"));
+  copyText(lines.join("\n")).then(ok => {
+    if (!ok) return toast("복사가 안 됐어요. 다시 눌러 주세요");
+    rows.forEach(r => S.vx[r.key] = today()); saveLocal(); render();
+    toast(`${rows.length}개 복사했어요! 내 시트 A열 맨 아래 빈 칸에 붙여넣으세요`);
+  });
+  if (S.mySheet) window.open(S.mySheet, "_blank");
 }
 function list_flipAll() { const p = cur(); p.voc.list.forEach((_, i) => V.flip[i] = true); render(); }
 function knowIt(i) { const p = cur(); const k = norm(p.voc.list[i].w); p.voc.known[k] = !p.voc.known[k]; touch(p); render(); }
@@ -1314,9 +1345,7 @@ function viewProgress() {
   <div class="card"><h3>지문별 진도</h3>
     ${S.passages.length ? `<div class="tscroll"><table><tr><th class="l">지문</th>${STEPS.map((s, i) => `<th>${i + 1}<br>${s.n}</th>`).join("")}<th>완주</th></tr>${rows}</table></div>` : '<div class="muted">아직 공부한 지문이 없어요.</div>'}</div>
   <div class="card"><h3>내 스티커 판</h3>${all.length ? `<div class="board">${all.map(s => `<span>${s}</span>`).join("")}</div>` : '<div class="muted">단계를 하나 끝낼 때마다 스티커가 붙어요!</div>'}</div>
-  ${SHEET_URL && S.passages.some(p => p.voc.list.length) ? `<div class="card"><h3>📤 내 모든 단어장 구글 시트로 보내기</h3>
-    <div class="muted">지금까지 모든 지문의 단어 ${S.passages.reduce((n, p) => n + p.voc.list.length, 0)}개를 시험 결과(통과·불통·미응시)와 함께 선생님 구글 시트의 "단어장 ${esc(S.me.sid)} ${esc(S.me.name)}" 탭에 쌓아요.</div>
-    <div class="row" style="margin-top:8px"><button onclick="sendVocab()">📤 모두 보내기</button><button class="ghost small" onclick="sendVocab(null,'불통')">❌ 불통 단어만</button><button class="ghost small" onclick="sendVocab(null,'통과')">✅ 통과 단어만</button></div></div>` : ""}`;
+  ${S.passages.some(p => p.voc.list.length) ? `<div class="card"><h3>📤 내 구글 시트 단어장으로 옮기기</h3>${vxCard(null)}</div>` : ""}`;
 }
 
 // ── 출석부
