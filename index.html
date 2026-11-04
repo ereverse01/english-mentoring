@@ -118,8 +118,9 @@ svg.arr{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
 .gw:hover::after,.gw.show::after{content:attr(data-tip);position:absolute;left:50%;bottom:calc(100% + 6px);transform:translateX(-50%);background:var(--ink);color:#fff;font-family:"Pretendard","Malgun Gothic",system-ui,sans-serif;font-size:15px;font-weight:600;line-height:1.4;padding:6px 10px;border-radius:8px;white-space:nowrap;z-index:15;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.18)}
 .gw:hover,.gw.show{background:#eef3ff}
 .vpairs{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:6px 14px}
-.vpair{display:grid;grid-template-columns:minmax(110px,auto) 1fr;gap:10px;align-items:baseline;border-bottom:1px dashed var(--line);padding:6px 2px}
-.vpair b{font-family:Georgia,serif;font-size:18px}
+.vpair{display:flex;flex-wrap:wrap;gap:2px 12px;align-items:baseline;border-bottom:1px dashed var(--line);padding:6px 2px}
+.vpair b{font-family:Georgia,serif;font-size:18px;min-width:110px}
+.vpair span{flex:1 0 9em;word-break:keep-all}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
 .fcard{height:110px;border-radius:14px;border:1.5px solid var(--line);background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:8px;cursor:pointer;position:relative}
 .fcard .fw{font-family:Georgia,serif;font-size:21px;font-weight:700}
@@ -364,7 +365,32 @@ function sim(a, b) {
   let c = 0; A.forEach(x => { if (m.get(x) > 0) { c++; m.set(x, m.get(x) - 1); } });
   return 2 * c / (A.length + B.length);
 }
-function keyHit(key, ans) {
+// 뜻이 비슷한 한국어 표현 묶음 (채점할 때 같은 말로 봐 줌)
+const SYN = [
+  ["정신", "마음", "머리"], ["오랫동안", "오랜 시간", "오랜시간", "장시간", "긴 시간", "오래"], ["피곤", "지치", "지쳐", "피로", "힘들"],
+  ["사람들", "사람", "인간"], ["공부", "학습"], ["중요", "중대"], ["연구자", "연구원", "과학자", "학자"], ["말하", "주장", "제안", "시사"],
+  ["실제로", "사실", "정말"], ["창의", "창조"], ["생각", "아이디어", "사고"], ["연결", "이어", "잇"], ["찾", "탐색", "구하"],
+  ["새로운", "새"], ["시작", "처음"], ["자유롭", "마음대로"], ["많은", "여러", "다양한"], ["도움", "돕"], ["때문", "덕분"],
+  ["할 수 있", "가능"], ["피하", "회피"], ["휴대폰", "핸드폰", "스마트폰", "폰"], ["다시 말해", "즉", "바꿔 말하면", "다시 말하면"],
+  ["그러므로", "그러니", "따라서", "그래서"], ["하지만", "그러나", "그런데"], ["예를 들어", "예컨대"], ["아이들", "어린이", "아이"],
+  ["학생", "학습자"], ["어려운", "힘든"], ["쉬운", "간단한"], ["빠르게", "빨리"], ["천천히", "느리게"], ["매일", "날마다"],
+  ["가장", "제일"], ["매우", "아주", "정말", "무척", "굉장히"], ["다른", "또 다른"], ["결과", "결국"], ["보여 주", "보여주", "나타내"],
+];
+function keyAlts(key) {
+  const alts = String(key).split("/").map(s => s.trim()).filter(Boolean);
+  const out = new Set(alts);
+  alts.forEach(a => SYN.forEach(g => g.forEach(m => { if (a.includes(m)) g.forEach(o => out.add(a.replace(m, o))); })));
+  return [...out];
+}
+const CANON = SYN.flatMap(g => g.filter(m => m.length >= 2).map(m => [m, g[0]])).sort((a, b) => b[0].length - a[0].length);
+function canon(s) { s = String(s); CANON.forEach(([m, c]) => { if (m !== c) s = s.split(m).join(c); }); return s; }
+function keyHit(key, ans) { return keyAlts(key).some(k => keyHit1(k, ans)); }
+function keyHit1(key, ans) {
+  const parts = String(key).trim().split(/\s+/).map(x => x.replace(/[^가-힣a-zA-Z0-9]/g, "")).filter(x => x.length >= 2);
+  if (parts.length >= 2) {
+    const a2 = String(ans).replace(/[^가-힣a-zA-Z0-9]/g, "");
+    if (parts.filter(x => a2.includes(x.slice(0, 2))).length / parts.length >= 0.5) return true;
+  }
   const k = String(key).replace(/[^가-힣a-zA-Z0-9]/g, ""), a = String(ans).replace(/[^가-힣a-zA-Z0-9]/g, "");
   if (!k) return true;
   if (a.includes(k)) return true;
@@ -377,8 +403,10 @@ function gradeOne(s, ans) {
   const keys = s.keys || [];
   const hits = keys.map(k => keyHit(k, ans));
   const kr = keys.length ? hits.filter(Boolean).length / keys.length : null;
-  const sm = Math.min(1, sim(ans, s.ko) / 0.55);
-  const score = Math.round(100 * (kr == null ? sm : 0.7 * kr + 0.3 * sm));
+  const sm = Math.min(1, sim(canon(ans), canon(s.ko)) / 0.5);
+  let score = Math.round(100 * (kr == null ? sm : 0.65 * kr + 0.35 * sm));
+  if (kr === 1) score = Math.max(score, 85);
+  else if (kr >= 0.75) score = Math.max(score, 70);
   return { score, hits };
 }
 
@@ -393,7 +421,7 @@ function makePrompt(lv, tp) {
 Reply with ONLY one JSON code block (no other text), exactly in this format:
 {
 "title": "English title",
-"sentences": [{"en": "sentence 1", "ko": "자연스러운 한국어 번역", "keys": ["이 번역에 꼭 들어가야 할 한국어 핵심어 2~4개"]}],
+"sentences": [{"en": "sentence 1", "ko": "자연스러운 한국어 번역", "keys": ["이 번역에 꼭 들어가야 할 짧은 한국어 핵심어 2~4개 (어간 위주, 같은 뜻의 다른 표현은 / 로 함께: 예 정신/마음, 오랫동안/오랜 시간)"]}],
 "topic": {"ko": "글의 주제 (한국어 한 문장)", "en": "topic as an English phrase"},
 "keywords": ["3-6 key English words or phrases exactly as written in the passage"],
 "repeated": ["words or phrases that are repeated or paraphrased in the passage, exactly as written"],
@@ -638,7 +666,7 @@ function vTr(p) {
         ${s.keys.length ? `<div style="margin-top:4px"><span class="muted">핵심어 </span>${s.keys.map((k, x) => `<span class="key ${hits[x] ? "hit" : "miss"}">${esc(k)}</span>`).join("")}</div>` : ""}
         <div class="model"><b>모범 번역</b> ${esc(s.ko)}</div>
         ${g ? `<div class="explain">🤖 ChatGPT 채점 <b>${esc(g.score)}/10</b> · ${esc(g.comment)}</div>` : ""}
-        <div class="selfb"><span class="muted">스스로 평가</span>${["⭕ 같은 뜻", "🔺 조금 달라요", "❌ 틀렸어요"].map((l, x) => `<button class="${p.tr.self[i] === x ? "on" : ""}" onclick="selfEval(${i},${x})">${l}</button>`).join("")}</div>`;
+        <div class="selfb"><span class="muted">뜻이 같으면 스스로 평가 (⭕ 90점↑ · 🔺 70점↑)</span>${["⭕ 같은 뜻", "🔺 조금 달라요", "❌ 틀렸어요"].map((l, x) => `<button class="${p.tr.self[i] === x ? "on" : ""}" onclick="selfEval(${i},${x})">${l}</button>`).join("")}</div>`;
     }
     return `<div class="sbox"><div class="en"><span class="num">${i + 1}</span>${glossHTML(p, s.en)}</div>
       <textarea data-tr="${i}" placeholder="한국어로 번역해 보세요" style="margin-top:8px;min-height:60px">${esc(p.tr.a[i] || "")}</textarea>
@@ -675,7 +703,9 @@ function gradeTr(i, quiet) {
   const p = cur(), a = (p.tr.a[i] || "").trim();
   if (!a) { if (!quiet) toast(i + 1 + "번 문장을 먼저 번역해 주세요"); return false; }
   const g = gradeOne(p.d.sentences[i], a);
-  p.tr.sc[i] = g.score; p.tr.hits[i] = g.hits;
+  p.tr.auto = p.tr.auto || [];
+  p.tr.auto[i] = g.score; p.tr.hits[i] = g.hits;
+  p.tr.sc[i] = selfScore(p, i);
   if (!quiet) afterTr(p);
   return true;
 }
@@ -690,7 +720,19 @@ function afterTr(p) {
   if (all) earn(p, "tr"); else { markAtt(false); touch(p); }
   render();
 }
-function selfEval(i, x) { const p = cur(); p.tr.self[i] = x; touch(p); render(); }
+// 스스로 평가: ⭕ 같은 뜻 → 90점 이상, 🔺 조금 달라요 → 70점 이상
+function selfScore(p, i) {
+  const auto = (p.tr.auto || [])[i] != null ? p.tr.auto[i] : p.tr.sc[i];
+  const x = p.tr.self[i];
+  return x === 0 ? Math.max(auto, 90) : x === 1 ? Math.max(auto, 70) : auto;
+}
+function selfEval(i, x) {
+  const p = cur(); p.tr.auto = p.tr.auto || [];
+  if (p.tr.auto[i] == null) p.tr.auto[i] = p.tr.sc[i];
+  p.tr.self[i] = p.tr.self[i] === x ? undefined : x;
+  p.tr.sc[i] = selfScore(p, i);
+  touch(p); render();
+}
 function addGpt() {
   const p = cur();
   try {
