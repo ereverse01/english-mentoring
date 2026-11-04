@@ -79,8 +79,18 @@ h3{margin:0 0 8px;font-size:17px}
 .passage{font-family:Georgia,serif;font-size:19px;line-height:2;user-select:none;-webkit-user-select:none}
 .passage sup{font-family:system-ui;font-size:11px;color:var(--pri);font-weight:800;margin-right:2px}
 .w{border-radius:4px;padding:1px 0;cursor:pointer}
-.w.k{background:var(--yel)}
-.w.r{background:var(--grn)}
+.w.k,.gap.k{background:#ffc6de}
+.w.r,.gap.r{background:var(--grn)}
+.u{text-decoration:underline;text-decoration-color:#ec4899;text-decoration-thickness:3px;text-underline-offset:5px;text-decoration-skip-ink:none}
+.bk{font-weight:800;font-size:22px;padding:0 1px;font-family:system-ui,sans-serif}
+.bk.n{color:#2563eb}
+.bk.m{color:#7c3aed}
+.w.sel{outline:2px dashed #7c3aed;outline-offset:1px}
+#hlBox{position:relative;line-height:2.6}
+svg.arr{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
+.penhelp{background:#f7f5f0;border-radius:10px;padding:8px 12px;font-size:14px;margin-bottom:10px}
+.dnode .ds{margin-top:4px;font-family:Georgia,serif;font-size:15px}
+.dnode .ds span{text-decoration:underline;text-decoration-color:#ec4899;text-decoration-thickness:2px;text-underline-offset:4px}
 .w.v{background:var(--blu);box-shadow:0 0 0 2px #8db4ff inset}
 .w.hint{text-decoration:underline wavy #f59e0b}
 .pens{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
@@ -94,7 +104,7 @@ h3{margin:0 0 8px;font-size:17px}
 .dnode .rl{font-weight:800}
 .dnode .rs{font-size:13px;color:var(--sub);margin-left:6px}
 .dnode .kw{margin-top:4px}
-.dnode .kw span{display:inline-block;background:var(--yel);border-radius:4px;padding:0 5px;margin:2px 3px 0 0;font-family:Georgia,serif;font-size:15px}
+.dnode .kw span{display:inline-block;background:#ffc6de;border-radius:4px;padding:0 5px;margin:2px 3px 0 0;font-family:Georgia,serif;font-size:15px}
 .dnode .kw span.r{background:var(--grn)}
 .arrow{text-align:center;color:var(--sub);font-size:18px;line-height:1.4}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
@@ -681,9 +691,8 @@ function retryQuiz() { const p = cur(); p.quiz.a = {}; p.quiz.done = false; touc
 
 // 3. 주제·구조
 function vStruct(p) {
-  const hl = p.struct.hl;
-  const pens = [["k", "🟨 키워드"], ["r", "🟩 반복 표현"], ["x", "🧽 지우개"]].map(([k, l]) => `<button class="pen ${V.pen === k ? "on" : ""}" onclick="V.pen='${k}';render()">${l}</button>`).join("");
-  const ph = passageHTML(p, (i, j) => (hl[i + "-" + j] || "") + (V.hint && V.hint[i + "-" + j] && !hl[i + "-" + j] ? " hint" : ""));
+  const pens = PENS.map(([k, l]) => `<button class="pen ${V.pen === k ? "on" : ""}" onclick="V.pen='${k}';V.sel=null;render()">${l}</button>`).join("");
+  const ph = structHTML(p);
   const rolesDone = p.d.sentences.every((_, i) => p.struct.roles[i]);
   const rolesHtml = p.d.sentences.map((s, i) => `<div class="rrow"><div class="s"><b style="color:var(--pri)">${i + 1}</b> ${esc(s.en)}</div>
      <select data-role="${i}" style="border-color:${ROLE_COLOR[p.struct.roles[i]] || "var(--line)"}"><option value="">역할 고르기</option>${ROLES.map(r => `<option ${p.struct.roles[i] === r ? "selected" : ""}>${r}</option>`).join("")}</select></div>`).join("");
@@ -701,8 +710,9 @@ function vStruct(p) {
       <div class="two"><div><h3>내 구조도</h3>${diagram(p, p.struct.roles, p.struct.topic)}</div><div><h3>AI 구조도</h3>${diagram(p, p.d.structure.roles, p.d.topic.ko)}</div></div></div>`;
   }
   return `<div class="card"><h2>🖍️ ① 형광펜으로 표시하기</h2>
-     <div class="muted">펜을 고르고 단어를 눌러 칠해요. 글의 <b>핵심 단어</b>는 노랑, <b>반복되거나 바꿔 말한 표현</b>은 초록!</div>
+     <div class="muted">펜을 고르고 단어를 눌러요. 같은 펜으로 한 번 더 누르면 지워져요.</div>
      <div class="pens" style="margin-top:10px">${pens}<button class="ghost small" onclick="hintRepeat()">💡 반복 단어 힌트</button></div>
+     <div class="penhelp">${PEN_HELP[V.pen] || ""}</div>
      <div class="passage" id="hlBox">${ph}</div></div>
    <div class="card"><h2>🎯 ② 글의 주제 쓰기</h2>
      <div class="muted">이 글이 결국 하고 싶은 말을 한국어 한 문장으로 써요.</div>
@@ -714,6 +724,94 @@ function vStruct(p) {
      <div class="row" style="margin-top:12px"><button onclick="finishStruct()">✅ 구조 분석 완료</button>
      ${p.struct.done ? `<button class="ghost" onclick="V.aiShow=!V.aiShow;render()">${V.aiShow ? "AI 비교 닫기" : "🤖 AI 분석과 비교하기"}</button>` : ""}</div></div>${ai}`;
 }
+const PENS = [["k", "🩷 키워드 형광펜"], ["u", "〰️ 키워드 서술 밑줄"], ["r", "🟩 반복 표현"], ["n", "[ ] 긴 명사구"], ["m", "( ) 수식어구·절 ↷"], ["x", "🧽 지우개"]];
+const PEN_HELP = {
+  k: "<b>핑크 형광펜</b> — 글의 핵심 단어(키워드)를 눌러 칠해요.",
+  u: "<b>핑크 밑줄</b> — 키워드에 대해 설명하는 부분(키워드가 어떻다고 말하는지)의 단어들을 눌러 밑줄을 그어요.",
+  r: "<b>초록 형광펜</b> — 반복되거나 다른 말로 바꿔 말한 표현을 칠해요.",
+  n: "<b>[ ] 긴 명사구</b> — 명사구의 <b>첫 단어</b>를 누르고 <b>끝 단어</b>를 누르면 대괄호로 묶여요.",
+  m: "<b>( ) 수식어구·절</b> — 꾸며 주는 형용사구나 절의 <b>첫 단어 → 끝 단어</b>를 눌러 괄호로 묶은 뒤, <b>꾸밈을 받는 명사</b>를 누르면 아래로 화살표가 이어져요.",
+  x: "<b>지우개</b> — 단어를 누르면 그 단어의 형광펜·밑줄과, 그 단어가 들어간 괄호·화살표가 지워져요.",
+};
+function structHTML(p) {
+  const st = p.struct, hl = st.hl, ul = st.ul || {}, br = st.br || [], sel = V.sel;
+  return p.d.sentences.map((s, i) => {
+    const tk = toks(s.en);
+    const body = tk.map((t, j) => {
+      const k = i + "-" + j;
+      if (!isW(t)) {
+        const a = i + "-" + (j - 1), b = i + "-" + (j + 1), c = [];
+        if (hl[a] && hl[a] === hl[b] && /^\s+$/.test(t)) c.push(hl[a]);
+        if (ul[a] && ul[b]) c.push("u");
+        return c.length ? `<span class="gap ${c.join(" ")}">${esc(t)}</span>` : esc(t);
+      }
+      const open = [], close = [];
+      br.forEach((b, bi) => {
+        const [, bs] = b.s.split("-").map(Number), [, be] = b.e.split("-").map(Number), len = be - bs;
+        if (b.s === k) open.push([len, b.t === "n" ? '<span class="bk n">[</span>' : `<span class="bk m" data-m="${bi}">(</span>`]);
+        if (b.e === k) close.push([len, b.t === "n" ? '<span class="bk n">]</span>' : '<span class="bk m">)</span>']);
+      });
+      open.sort((x, y) => y[0] - x[0]); close.sort((x, y) => x[0] - y[0]);
+      const cls = [hl[k] || "", ul[k] ? "u" : ""];
+      if (V.hint && V.hint[k] && !hl[k] && !ul[k]) cls.push("hint");
+      if (sel && sel.i === i && j >= sel.s && j <= (sel.e == null ? sel.s : sel.e)) cls.push("sel");
+      return open.map(x => x[1]).join("") + `<span class="w ${cls.join(" ")}" data-i="${i}" data-j="${j}">${esc(t)}</span>` + close.map(x => x[1]).join("");
+    }).join("");
+    return `<span class="sent"><sup>${i + 1}</sup>${body}</span> `;
+  }).join("");
+}
+function inRange(b, i, j) {
+  const [si, sj] = b.s.split("-").map(Number), [, ej] = b.e.split("-").map(Number);
+  return si === i && j >= sj && j <= ej;
+}
+function structTap(i, j) {
+  const p = cur(), st = p.struct, k = i + "-" + j;
+  st.ul = st.ul || {}; st.br = st.br || [];
+  if (V.pen === "n" || V.pen === "m") return rangeTap(p, i, j);
+  if (V.pen === "x") { delete st.hl[k]; delete st.ul[k]; st.br = st.br.filter(b => !inRange(b, i, j) && b.to !== k); }
+  else if (V.pen === "u") { if (st.ul[k]) delete st.ul[k]; else st.ul[k] = 1; }
+  else { if (st.hl[k] === V.pen) delete st.hl[k]; else st.hl[k] = V.pen; }
+  touch(p); render();
+}
+function rangeTap(p, i, j) {
+  const sel = V.sel, br = p.struct.br;
+  if (!sel || sel.pen !== V.pen) {
+    V.sel = { pen: V.pen, i, s: j };
+    toast(V.pen === "n" ? "이제 명사구의 끝 단어를 눌러요" : "이제 수식어구·절의 끝 단어를 눌러요");
+    return render();
+  }
+  if (sel.i !== i) { V.sel = { pen: V.pen, i, s: j }; toast("같은 문장 안에서 골라요. 여기부터 다시 시작!"); return render(); }
+  if (sel.e == null) {
+    const s = Math.min(sel.s, j), e = Math.max(sel.s, j);
+    if (V.pen === "n") { br.push({ t: "n", s: i + "-" + s, e: i + "-" + e }); V.sel = null; touch(p); return render(); }
+    V.sel = { pen: "m", i, s, e }; toast("이제 꾸밈을 받는 명사를 눌러요"); return render();
+  }
+  if (j >= sel.s && j <= sel.e) return toast("괄호 밖에 있는 명사를 눌러요");
+  br.push({ t: "m", s: i + "-" + sel.s, e: i + "-" + sel.e, to: i + "-" + j });
+  V.sel = null; touch(p); render();
+}
+function drawArrows() {
+  const box = document.getElementById("hlBox"); if (!box) return;
+  const old = box.querySelector("svg.arr"); if (old) old.remove();
+  const p = cur(), br = p.struct.br || [];
+  const R = box.getBoundingClientRect();
+  let paths = "";
+  br.forEach((b, bi) => {
+    if (b.t !== "m" || !b.to) return;
+    const op = box.querySelector(`.bk.m[data-m="${bi}"]`);
+    const [ti, tj] = b.to.split("-");
+    const tg = box.querySelector(`.w[data-i="${ti}"][data-j="${tj}"]`);
+    if (!op || !tg) return;
+    const a = op.getClientRects()[0], c = tg.getClientRects()[0];
+    const x1 = a.left + a.width / 2 - R.left, y1 = a.bottom - R.top - 4;
+    const x2 = c.left + c.width / 2 - R.left, y2 = c.bottom - R.top - 2;
+    const dip = Math.max(y1, y2) + 16;
+    paths += `<path d="M${x1.toFixed(1)},${y1.toFixed(1)} C${x1.toFixed(1)},${dip.toFixed(1)} ${x2.toFixed(1)},${dip.toFixed(1)} ${x2.toFixed(1)},${(y2 + 2).toFixed(1)}"/>`;
+  });
+  if (!paths) return;
+  box.insertAdjacentHTML("beforeend", `<svg class="arr" width="${box.clientWidth}" height="${box.clientHeight}"><defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker></defs><g fill="none" stroke="#7c3aed" stroke-width="2" marker-end="url(#ah)">${paths}</g></svg>`);
+}
+window.addEventListener("resize", () => drawArrows());
 function myMarks(p, c) {
   const out = [];
   Object.entries(p.struct.hl).forEach(([k, v]) => { if (v !== c) return; const [i, j] = k.split("-").map(Number); const t = toks(p.d.sentences[i].en)[j]; if (t) out.push(t.toLowerCase()); });
@@ -726,6 +824,16 @@ function diagram(p, roles, topic) {
   const nodes = groups.map(g => {
     const words = []; const seen = new Set();
     g.s.forEach(i => kw(i).forEach(([t, c]) => { const k = t.toLowerCase(); if (!seen.has(k)) { seen.add(k); words.push(`<span class="${c === "r" ? "r" : ""}">${esc(t)}</span>`); } }));
+    const ul = p.struct.ul || {}, runs = [];
+    g.s.forEach(i => {
+      let run = [];
+      toks(p.d.sentences[i].en).forEach((t, j) => {
+        if (!isW(t)) return;
+        if (ul[i + "-" + j]) run.push(t); else if (run.length) { runs.push(run.join(" ")); run = []; }
+      });
+      if (run.length) runs.push(run.join(" "));
+    });
+    if (runs.length) words.push(`</div><div class="ds">${runs.map(r => `<span>${esc(r)}</span>`).join(" · ")}`);
     const first = p.d.sentences[g.s[0]].en.split(" ").slice(0, 6).join(" ") + "…";
     return `<div class="dnode" style="border-color:${ROLE_COLOR[g.r] || "#ccc"}${g.r === "주제문" ? ";background:#fff0f6" : ""}">
       <span class="rl" style="color:${ROLE_COLOR[g.r] || "#666"}">${g.r === "주제문" ? "⭐ " : ""}${esc(g.r || "?")}</span><span class="rs">문장 ${g.s.length > 1 ? g.s[0] + 1 + "–" + (g.s[g.s.length - 1] + 1) : g.s[0] + 1}</span>
@@ -940,13 +1048,11 @@ function afterRender() {
   document.querySelectorAll("[data-vm]").forEach(el => el.oninput = () => { const p = cur(); p.voc.list[+el.dataset.vm].m = el.value; touch(p); });
   const ti = document.getElementById("topicIn"); if (ti) ti.oninput = () => { const p = cur(); p.struct.topic = ti.value; touch(p); };
   const hb = document.getElementById("hlBox");
-  if (hb) hb.onclick = e => {
-    const w = e.target.closest(".w"); if (!w) return;
-    const p = cur(), k = w.dataset.i + "-" + w.dataset.j;
-    if (V.pen === "x" || p.struct.hl[k] === V.pen) delete p.struct.hl[k]; else p.struct.hl[k] = V.pen;
-    touch(p);
-    w.className = "w " + (p.struct.hl[k] || "") + (V.hint && V.hint[k] && !p.struct.hl[k] ? " hint" : "");
-  };
+  if (hb) {
+    hb.onclick = e => { const w = e.target.closest(".w"); if (w) structTap(+w.dataset.i, +w.dataset.j); };
+    drawArrows();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawArrows);
+  }
   const vb = document.getElementById("vocBox");
   if (vb) vb.onclick = e => { const w = e.target.closest(".w"); if (w) tapVoc(+w.dataset.i, +w.dataset.j); };
   const tIn = document.getElementById("tIn"); if (tIn && !tIn.disabled) tIn.focus();
