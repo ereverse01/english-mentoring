@@ -87,6 +87,8 @@ h3{margin:0 0 8px;font-size:17px}
 .bk.m{color:#7c3aed}
 .w.sel{outline:2px dashed #7c3aed;outline-offset:1px}
 #hlBox{position:relative;line-height:2.6}
+.hlview{position:relative;line-height:2.6;font-size:17px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:#fff}
+.hlview .w{cursor:default}
 svg.arr{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
 .penhelp{background:#f7f5f0;border-radius:10px;padding:8px 12px;font-size:14px;margin-bottom:10px}
 .dnode .ds{margin-top:4px;font-family:Georgia,serif;font-size:15px}
@@ -427,6 +429,7 @@ Reply with ONLY one JSON code block (no other text), exactly in this format:
 "sentences": [{"en": "sentence 1", "ko": "자연스러운 한국어 번역", "keys": ["이 번역에 꼭 들어가야 할 짧은 한국어 핵심어 2~4개 (어간 위주, 같은 뜻의 다른 표현은 / 로 함께: 예 정신/마음, 오랫동안/오랜 시간)"]}],
 "topic": {"ko": "글의 주제 (한국어 한 문장)", "en": "topic as an English phrase"},
 "keywords": ["3-6 key English words or phrases exactly as written in the passage"],
+"marks": {"descriptions": ["phrases copied exactly from the passage that describe or explain the keywords (what the passage says about them)"], "nounPhrases": ["long noun phrases (4+ words) copied exactly from the passage"], "modifiers": [{"text": "a long adjective phrase, participle phrase or relative clause copied exactly from the passage", "noun": "the single noun it modifies, exactly as written"}]},
 "repeated": ["words or phrases that are repeated or paraphrased in the passage, exactly as written"],
 "structure": {"type": "두괄식 / 미괄식 / 양괄식 / 중괄식 / 나열식 중 하나", "roles": ["one per sentence, each one of: 도입, 주제문, 근거, 예시, 대조·반론, 부연, 결론"], "summary": "글의 전개 구조 설명 (한국어 1~2문장)"},
 "questions": [
@@ -477,6 +480,11 @@ function buildPassage(o, lv, tp) {
       title: String(o.title || "Untitled"), sentences: sents,
       topic: { ko: String((o.topic && o.topic.ko) || o.topic || ""), en: String((o.topic && o.topic.en) || "") },
       keywords: (o.keywords || []).map(String), repeated: (o.repeated || []).map(String),
+      marks: {
+        descriptions: ((o.marks || {}).descriptions || []).map(String),
+        nounPhrases: ((o.marks || {}).nounPhrases || []).map(String),
+        modifiers: ((o.marks || {}).modifiers || []).filter(Boolean).map(m => typeof m === "string" ? { text: m, noun: "" } : { text: String(m.text || ""), noun: String(m.noun || "") }),
+      },
       structure: { type: String(st.type || ""), roles, summary: String(st.summary || "") },
       questions: qs,
       vocab: (o.vocab || []).filter(v => v && v.w).map(v => ({ w: String(v.w).trim(), m: String(v.m || "").trim() })),
@@ -874,7 +882,8 @@ function vStruct(p) {
       <p><b>키워드</b> ${kw}<br><span class="muted">초록 = 내가 형광펜으로 찾은 것</span></p>
       ${rp ? `<p><b>반복·바꿔 말한 표현</b> ${rp}</p>` : ""}
       <p><b>구조</b> ${esc(p.d.structure.type)} — ${esc(p.d.structure.summary)}<br><span class="muted">문장 역할이 AI와 같은 것: ${same}/${p.d.sentences.length}</span></p>
-      <div class="two"><div><h3>내 구조도</h3>${diagram(p, p.struct.roles, p.struct.topic)}</div><div><h3>AI 구조도</h3>${diagram(p, p.d.structure.roles, p.d.topic.ko)}</div></div></div>`;
+      <div class="two"><div><h3>내 구조도</h3>${diagram(p, p.struct.roles, p.struct.topic)}</div><div><h3>AI 구조도</h3>${diagram(p, p.d.structure.roles, p.d.topic.ko)}</div></div>
+      ${hlCompare(p)}</div>`;
   }
   return `<div class="card"><h2>🖍️ ① 형광펜으로 표시하기</h2>
      <div class="muted">펜을 고르고 단어를 눌러요. 같은 펜으로 한 번 더 누르면 지워져요.</div>
@@ -900,8 +909,9 @@ const PEN_HELP = {
   m: "<b>( ) 수식어구·절</b> — 꾸며 주는 형용사구나 절의 <b>첫 단어 → 끝 단어</b>를 눌러 괄호로 묶은 뒤, <b>꾸밈을 받는 명사</b>를 누르면 아래로 화살표가 이어져요.",
   x: "<b>지우개</b> — 단어를 누르면 그 단어의 형광펜·밑줄과, 그 단어가 들어간 괄호·화살표가 지워져요.",
 };
-function structHTML(p) {
-  const st = p.struct, hl = st.hl, ul = st.ul || {}, br = st.br || [], sel = V.sel;
+function structHTML(p, st, live) {
+  st = st || p.struct; if (live === undefined) live = true;
+  const hl = st.hl || {}, ul = st.ul || {}, br = st.br || [], sel = live ? V.sel : null;
   return p.d.sentences.map((s, i) => {
     const tk = toks(s.en);
     const body = tk.map((t, j) => {
@@ -925,6 +935,55 @@ function structHTML(p) {
     }).join("");
     return `<span class="sent"><sup>${i + 1}</sup>${body}</span> `;
   }).join("");
+}
+// AI 분석(키워드·서술·반복·명사구·수식어)을 지문 위 표시로 바꿈
+function findSpans(p, text, onlyFirst) {
+  const want = String(text).match(/[A-Za-z]+(?:['’-][A-Za-z]+)*/g);
+  if (!want) return [];
+  const W = want.map(w => norm(w)), out = [];
+  for (let i = 0; i < p.d.sentences.length; i++) {
+    const tk = toks(p.d.sentences[i].en), idx = [];
+    tk.forEach((t, j) => { if (isW(t)) idx.push(j); });
+    for (let a = 0; a + W.length <= idx.length; a++) {
+      let ok = true;
+      for (let b = 0; b < W.length && ok; b++) {
+        const t = norm(tk[idx[a + b]]);
+        ok = t === W[b] || (W.length === 1 && stems(t).some(x => stems(W[b]).includes(x)));
+      }
+      if (ok) { out.push([i, idx[a], idx[a + W.length - 1]]); if (onlyFirst) return out; }
+    }
+  }
+  return out;
+}
+function aiStruct(p) {
+  const m = p.d.marks || {}, st = { hl: {}, ul: {}, br: [] };
+  const paint = (list, fn) => (list || []).forEach(t => findSpans(p, t).forEach(([i, s, e]) => {
+    toks(p.d.sentences[i].en).forEach((tok, j) => { if (j >= s && j <= e && isW(tok)) fn(i + "-" + j); });
+  }));
+  paint(p.d.repeated, k => { st.hl[k] = "r"; });
+  paint(p.d.keywords, k => { st.hl[k] = "k"; });
+  paint(m.descriptions, k => { st.ul[k] = 1; });
+  (m.nounPhrases || []).forEach(t => findSpans(p, t, true).forEach(([i, s, e]) => st.br.push({ t: "n", s: i + "-" + s, e: i + "-" + e })));
+  (m.modifiers || []).forEach(md => {
+    const sp = findSpans(p, md.text || md, true)[0]; if (!sp) return;
+    const [i, s, e] = sp, tk = toks(p.d.sentences[i].en), nn = norm(md.noun || "");
+    let to = -1;
+    if (nn) {
+      for (let j = s - 1; j >= 0; j--) if (isW(tk[j]) && norm(tk[j]) === nn) { to = j; break; }
+      if (to < 0) for (let j = e + 1; j < tk.length; j++) if (isW(tk[j]) && norm(tk[j]) === nn) { to = j; break; }
+    }
+    if (to < 0) for (let j = s - 1; j >= 0; j--) if (isW(tk[j])) { to = j; break; }
+    st.br.push({ t: "m", s: i + "-" + s, e: i + "-" + e, to: to < 0 ? null : i + "-" + to });
+  });
+  return st;
+}
+function hlCompare(p) {
+  const has = p.d.marks && ((p.d.marks.nounPhrases || []).length || (p.d.marks.modifiers || []).length);
+  const legend = `<div class="muted" style="margin-bottom:6px"><span class="w k">키워드</span> · <span class="u">키워드 서술</span> · <span class="w r">반복 표현</span> · <b style="color:#2563eb">[ ]</b> 긴 명사구 · <b style="color:#7c3aed">( ) ↷</b> 수식어구·절</div>`;
+  return `<h3 style="margin-top:18px">🖍️ 형광펜 비교</h3>${legend}
+    ${has ? "" : `<div class="muted">이 지문은 예전 방식으로 받아서 AI 버전에 키워드·반복 표현만 나와요. 새로 받는 지문부터 서술 밑줄·괄호까지 나와요.</div>`}
+    <div class="two"><div><h3>내 형광펜</h3><div class="passage hlview" id="cmpMine">${structHTML(p, p.struct, false)}</div></div>
+    <div><h3>AI 형광펜</h3><div class="passage hlview" id="cmpAi">${structHTML(p, aiStruct(p), false)}</div></div></div>`;
 }
 function inRange(b, i, j) {
   const [si, sj] = b.s.split("-").map(Number), [, ej] = b.e.split("-").map(Number);
@@ -957,9 +1016,13 @@ function rangeTap(p, i, j) {
   V.sel = null; touch(p); render();
 }
 function drawArrows() {
-  const box = document.getElementById("hlBox"); if (!box) return;
+  const p = cur(); if (!p) return;
+  drawArrowsIn("hlBox", p.struct.br); drawArrowsIn("cmpMine", p.struct.br); drawArrowsIn("cmpAi", aiStruct(p).br);
+}
+function drawArrowsIn(id, br) {
+  const box = document.getElementById(id); if (!box) return;
   const old = box.querySelector("svg.arr"); if (old) old.remove();
-  const p = cur(), br = p.struct.br || [];
+  br = br || [];
   const R = box.getBoundingClientRect();
   let paths = "";
   br.forEach((b, bi) => {
@@ -1252,8 +1315,8 @@ function afterRender() {
   document.querySelectorAll("[data-vm]").forEach(el => el.oninput = () => { const p = cur(); p.voc.list[+el.dataset.vm].m = el.value; touch(p); });
   const ti = document.getElementById("topicIn"); if (ti) ti.oninput = () => { const p = cur(); p.struct.topic = ti.value; touch(p); };
   const hb = document.getElementById("hlBox");
-  if (hb) {
-    hb.onclick = e => { const w = e.target.closest(".w"); if (w) structTap(+w.dataset.i, +w.dataset.j); };
+  if (hb) hb.onclick = e => { const w = e.target.closest(".w"); if (w) structTap(+w.dataset.i, +w.dataset.j); };
+  if (hb || document.getElementById("cmpAi")) {
     drawArrows();
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawArrows);
   }
@@ -1362,6 +1425,11 @@ const SAMPLE = {
   ],
   topic: { ko: "지루함은 창의적인 생각을 이끌어 낼 수 있다.", en: "the positive role of boredom in creative thinking" },
   keywords: ["boredom", "creative", "wander", "mind", "connect ideas"],
+  marks: {
+    descriptions: ["may actually play an important role in creative thinking", "allows the brain to connect ideas", "is often a mind that is searching for something new"],
+    nounPhrases: ["more creative uses for a plastic cup", "every empty moment"],
+    modifiers: [{ text: "that seem unrelated at first", noun: "ideas" }, { text: "who first completed a boring task", noun: "participants" }, { text: "that is searching for something new", noun: "mind" }],
+  },
   repeated: ["boredom", "bored", "boring", "wander", "wandering", "creative", "mind", "phone"],
   structure: { type: "두괄식 (통념 → 반박)", roles: ["도입", "주제문", "근거", "근거", "예시", "부연", "결론"], summary: "지루함을 피하려는 통념을 먼저 보여 준 뒤 However로 주제(지루함은 창의성에 도움)를 밝히고, 원리와 연구 사례로 뒷받침한 후 실천을 권하며 마무리한다." },
   questions: [
