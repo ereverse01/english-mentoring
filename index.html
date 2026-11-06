@@ -211,6 +211,10 @@ td.l,th.l{text-align:left}
 .chunk{background:#fff;color:var(--ink);border:1.5px solid var(--line);font-family:Georgia,serif;font-weight:600;font-size:17px;padding:8px 14px}
 .chunk.on{background:var(--pri2);border-color:var(--pri);color:var(--ink)}
 .chunk:disabled{opacity:1}
+.glog{border:1px solid var(--line);border-radius:10px;background:#fff;padding:6px 10px;margin:6px 0}
+.glog summary{cursor:pointer}
+.glrow{border-top:1px dashed var(--line);padding:6px 0;font-size:14px}
+.glw{margin:4px 0 0 10px}
 </style>
 </head>
 <body>
@@ -317,6 +321,7 @@ async function pull() {
       let p; try { p = JSON.parse(row.data); } catch (e) { return; }
       if (!p || !p.id) return;
       if (p.id === "gram") { if (mergeGram(p)) changed = true; return; }
+      if (String(p.id).startsWith("g-")) return;
       const i = S.passages.findIndex(x => x.id === p.id);
       if (i < 0) { S.passages.push(p); changed = true; }
       else if ((S.passages[i].updated || 0) < (p.updated || 0)) { S.passages[i] = p; changed = true; }
@@ -1506,7 +1511,7 @@ function teacherView() {
     return;
   }
   const by = {};
-  TD.rows.forEach(r => { const s = by[r.sid] || (by[r.sid] = { sid: r.sid, name: r.name, ps: [], att: {} }); if (r.id === "gram") s.gram = r; else s.ps.push(r); s.name = r.name; });
+  TD.rows.forEach(r => { const s = by[r.sid] || (by[r.sid] = { sid: r.sid, name: r.name, ps: [], att: {} }); if (r.id === "gram") s.gram = r; else if (r.id.startsWith("g-")) (s.gl = s.gl || {})[r.id.slice(2)] = r; else s.ps.push(r); s.name = r.name; });
   TD.att.forEach(a => { const s = by[a.sid] || (by[a.sid] = { sid: a.sid, name: a.name, ps: [], att: {} }); s.att[a.date] = a; });
   const studs = Object.values(by).sort((a, b) => a.sid.localeCompare(b.sid));
   const dates = [...new Set(TD.att.map(a => a.date))].sort().slice(-14);
@@ -1516,14 +1521,14 @@ function teacherView() {
     const st = s.ps.reduce((n, p) => n + (+p.st || 0) + (+p.st === 6 ? 1 : 0), 0) + (s.gram ? +s.gram.st || 0 : 0);
     const full = s.ps.filter(p => +p.st === 6).length;
     const open = TD.open === s.sid;
-    const gm = s.gram ? `<div class="l" style="text-align:left;padding:6px 4px 10px"><b>🧩 기초 문법</b> ${+s.gram.st || 0}/${GRAM.length}과 통과${s.gram.quiz !== "" && s.gram.quiz != null ? ` · 첫 도전 평균 ${esc(s.gram.quiz)}/6` : ""}<div class="muted">${esc(s.gram.steps) || "아직 통과한 과 없음"}</div></div>` : "";
+    const gm = s.gram ? `<div class="l" style="text-align:left;padding:6px 4px 10px"><b>🧩 기초 문법</b> ${+s.gram.st || 0}/${GRAM.length}과 통과${s.gram.quiz !== "" && s.gram.quiz != null ? ` · 첫 도전 평균 ${esc(s.gram.quiz)}/6` : ""}<div class="muted">${esc(s.gram.steps) || "아직 통과한 과 없음"}</div></div>${tGramStudent(s)}` : tGramStudent(s);
     const det = open ? `<tr><td colspan="${7 + dates.length}" style="background:#faf8f3">${gm}<table class="tg"><tr><th class="l">지문</th><th>수준</th><th>시작일</th><th>완료 단계</th><th>스티커</th><th>번역</th><th>문제</th><th>단어</th><th>저장</th></tr>
       ${s.ps.map(p => `<tr><td class="l">${esc(p.title)}</td><td>${esc(p.level)}</td><td>${esc(p.created)}</td><td class="l" style="font-size:13px">${esc(p.steps)}</td><td>${p.st}/6</td><td>${esc(p.tr)}</td><td>${esc(p.quiz)}</td><td>${esc(p.test)}</td><td style="font-size:12px">${esc(String(p.time).slice(0, 16).replace("T", " "))}</td></tr>`).join("")}</table></td></tr>` : "";
     return `<tr class="clickrow" onclick="TD.open=TD.open==='${s.sid}'?null:'${s.sid}';teacherView()"><td>${esc(s.sid)}</td><td class="l"><b>${esc(s.name)}</b></td><td>${s.ps.filter(p => +p.st > 0).length}<span class="muted" style="font-size:12px"> /${s.ps.length}</span></td><td>${full}</td><td>${s.gram ? `${+s.gram.st || 0}/${GRAM.length}` : ""}</td><td>🏅 ${st}</td><td>${Object.keys(s.att).length}</td>
       ${dates.map(d => `<td class="${s.att[d] ? "yes" : ""}">${s.att[d] ? "✔" : ""}</td>`).join("")}</tr>${det}`;
   }).join("");
   app.innerHTML = `<header><div class="hbar"><div class="logo">👩‍🏫 영어 독해 멘토링 · 선생님</div><div class="who"><button class="ghost small" onclick="tLoad()">새로고침</button><button class="ghost small" onclick="tCopy()">엑셀용 복사</button></div></div></header>
-  <div class="wrap">${qnaHTML(f)}<div class="card"><div class="row"><input id="tf" placeholder="학번 앞자리(예: 103)나 이름으로 찾기" value="${esc(f)}" style="max-width:320px"><span class="muted">학생 ${shown.length}명 · 줄을 누르면 지문별 기록</span></div>
+  <div class="wrap">${qnaHTML(f)}${tGramWrong(shown)}<div class="card"><div class="row"><input id="tf" placeholder="학번 앞자리(예: 103)나 이름으로 찾기" value="${esc(f)}" style="max-width:320px"><span class="muted">학생 ${shown.length}명 · 줄을 누르면 지문별 기록</span></div>
     <div class="tscroll" style="margin-top:10px"><table class="tg"><tr><th>학번</th><th class="l">이름</th><th>공부한 지문<br>/받은 지문</th><th>완주</th><th>기초 문법<br>통과</th><th>스티커</th><th>출석일</th>${dates.map(d => `<th>${d.slice(5).replace("-", "/")}</th>`).join("")}</tr>${rows}</table></div></div></div>`;
   document.querySelectorAll("[data-qa]").forEach(el => el.oninput = () => { (TD.drafts = TD.drafts || {})[el.dataset.qa] = el.value; });
   const tf = document.getElementById("tf");

@@ -139,7 +139,7 @@ function tapWords(s) {
 function startGQ(only) {
   const l = gLesson();
   const prev = GQ;
-  GQ = { id: l.id, items: only || shuffle(l.quiz.map((_, i) => i)), i: 0, wrong: [], right: 0,
+  GQ = { id: l.id, items: only || shuffle(l.quiz.map((_, i) => i)), i: 0, wrong: [], wlog: [], right: 0,
     round: only && prev ? prev.round + 1 : 1, first: only && prev ? prev.first : null };
   gPrep(); render(); window.scrollTo(0, 0);
 }
@@ -197,7 +197,8 @@ function gCheck() {
   else if (q.k === "tap") { const ans = tapWords(q.s).map((w, i) => w.a ? i : -1).filter(i => i >= 0); GQ.ok = ans.length === GQ.pick.length && ans.every(i => GQ.pick.includes(i)); }
   else GQ.ok = GQ.pick.map(ci => q.ch[ci]).join(" ") === q.ch.join(" ");
   GQ.checked = true;
-  if (GQ.ok) GQ.right++; else GQ.wrong.push(GQ.items[GQ.i]);
+  if (GQ.ok) GQ.right++;
+  else { GQ.wrong.push(GQ.items[GQ.i]); GQ.wlog.push({ q: GQ.items[GQ.i], a: gPicked(q).slice(0, 200) }); }
   render();
 }
 function gNext() { GQ.i++; if (GQ.i < GQ.items.length) gPrep(); else gFinishRound(); render(); window.scrollTo(0, 0); }
@@ -208,6 +209,8 @@ function gFinishRound() {
     if (!g.st) g.first = GQ.right;
     g.best = Math.max(g.best || 0, GQ.right);
   }
+  (g.log = g.log || []).push({ d: today(), r: GQ.round, ok: GQ.right, n: GQ.items.length, w: GQ.wlog });
+  if (g.log.length > 30) g.log = g.log.slice(-30);
   markAtt(false);
   if (!GQ.wrong.length && !g.st) {
     g.st = STICKERS[Math.floor(Math.random() * STICKERS.length)]; g.date = today();
@@ -216,6 +219,7 @@ function gFinishRound() {
     setTimeout(() => popSticker(all ? "🏆" : g.st, all ? "기초 문법 전체 완주! 대단해요" : l.t + " 통과! 스티커 획득"), 150);
   }
   gTouch();
+  pushLesson(l);
 }
 function gRoundEnd(l) {
   const nx = GRAM[GRAM.indexOf(l) + 1];
@@ -226,4 +230,76 @@ function gRoundEnd(l) {
   return `<div class="card" style="text-align:center"><div style="font-size:60px">${g.st}</div><h3>다 맞혔어요! (첫 도전 ${GQ.first} / ${l.quiz.length})</h3>
     <div class="row" style="justify-content:center;margin-top:12px">${nx ? `<button style="font-size:18px;padding:12px 24px" onclick="openG('${nx.id}')">다음 과 ➡️ ${esc(nx.t)}</button>` : ""}
       <button class="ghost" onclick="V.gid=null;GQ=null;render()">📋 목차로</button></div></div>`;
+}
+
+// ── 퀴즈 답 기록 (선생님이 볼 수 있게: 시트에 과마다 한 줄 "g-과id")
+function gPicked(q) {
+  if (q.k === "mc") return q.ch[GQ.pick] || "";
+  if (q.k === "tap") { const ws = tapWords(q.s); return GQ.pick.slice().sort((a, b) => a - b).map(i => ws[i].w).join(" "); }
+  return GQ.pick.map(ci => q.ch[ci]).join(" ");
+}
+function gRight(q) {
+  if (q.k === "mc") return q.ch[q.a];
+  if (q.k === "tap") return tapWords(q.s).filter(w => w.a).map(w => w.w).join(" ");
+  return q.ch.join(" ");
+}
+function gPlain(q) { return q.s ? q.s.replace(/\|/g, "").replace(/\(\((.+?)\)\)/g, "$1").replace(/[\[\]{}]/g, "") : q.ko ? "뜻: " + q.ko : ""; }
+// 기록 한 줄: "11/06 첫 풀이 5/6 ‖ Q3: 낸 답 ‖ Q5: 낸 답"
+function logLine(e) { return `${e.d.slice(5).replace("-", "/")} ${e.r === 1 ? "첫 풀이" : "다시 풀기"} ${e.ok}/${e.n}` + e.w.map(x => ` ‖ Q${x.q + 1}: ${String(x.a).replace(/‖/g, "|")}`).join(""); }
+function parseLog(txt) {
+  return String(txt || "").split("\n").map(line => {
+    const m = line.match(/^(\S+) (첫 풀이|다시 풀기) (\d+)\/(\d+)/); if (!m) return null;
+    const w = line.split(" ‖ ").slice(1).map(x => { const k = x.match(/^Q(\d+): ([\s\S]*)$/); return k ? { q: +k[1] - 1, a: k[2] } : null; }).filter(Boolean);
+    return { d: m[1], first: m[2] === "첫 풀이", ok: +m[3], n: +m[4], w };
+  }).filter(Boolean);
+}
+async function pushLesson(l) {
+  if (!SHEET_URL || !S) return;
+  const g = S.gram[l.id]; if (!g || !g.log) return;
+  const day = today();
+  try {
+    await api({
+      action: "save", sid: S.me.sid, name: S.me.name,
+      p: {
+        id: "g-" + l.id, title: `🧩 ${GRAM.indexOf(l) + 1}과 ${l.t}`, level: "기초", created: g.log[0].d,
+        steps: g.log.slice(-20).map(logLine).join("\n"), st: g.st ? 1 : 0, tr: "", quiz: g.first == null ? "" : g.first, test: "", data: "",
+      },
+      att: S.att[day] ? { date: day, n: S.att[day].n, st: S.att[day].st } : null,
+    });
+  } catch (e) {}
+}
+
+// ── 선생님 화면: 학생별 퀴즈 기록 + 자주 틀린 문항
+function tGramStudent(s) {
+  const ls = GRAM.filter(l => s.gl && s.gl[l.id]);
+  if (!ls.length) return "";
+  return `<div style="text-align:left;padding:4px 4px 12px">${ls.map(l => {
+    const r = s.gl[l.id], log = parseLog(r.steps);
+    return `<details class="glog"><summary><b>${GRAM.indexOf(l) + 1}과 ${esc(l.t)}</b> ${+r.st ? "✅ 통과" : "⏳ 아직"} · 첫 풀이 ${esc(r.quiz)}/${l.quiz.length} · 틀린 답 ${log.reduce((n, e) => n + e.w.length, 0)}개</summary>
+      ${log.map(e => `<div class="glrow"><span class="muted">${esc(e.d)} ${e.first ? "첫 풀이" : "다시 풀기"} ${e.ok}/${e.n}</span>${e.w.length ? e.w.map(x => {
+        const q = l.quiz[x.q]; if (!q) return "";
+        return `<div class="glw"><div>Q${x.q + 1}. ${esc(q.q)} <span class="en" style="font-size:15px">${esc(gPlain(q))}</span></div>
+          <div>❌ 낸 답: <b style="color:var(--bad)">${esc(x.a)}</b> → ⭕ 정답: <b style="color:var(--ok)">${esc(gRight(q))}</b></div></div>`;
+      }).join("") : ' <span style="color:var(--ok)">모두 맞힘</span>'}</div>`).join("")}</details>`;
+  }).join("")}</div>`;
+}
+function tGramWrong(studs) {
+  const cnt = {};
+  studs.forEach(s => Object.entries(s.gl || {}).forEach(([lid, r]) => {
+    const l = GRAM.find(x => x.id === lid); if (!l) return;
+    parseLog(r.steps).filter(e => e.first).forEach(e => e.w.forEach(x => {
+      const k = lid + ":" + x.q, c = cnt[k] || (cnt[k] = { l, q: x.q, who: [], ans: {} });
+      if (!c.who.includes(s.name)) c.who.push(s.name);
+      c.ans[x.a] = (c.ans[x.a] || 0) + 1;
+    }));
+  }));
+  const top = Object.values(cnt).sort((a, b) => b.who.length - a.who.length).slice(0, TD.gAll ? 100 : 8);
+  if (!top.length) return "";
+  return `<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">🧩 기초 문법 자주 틀린 문항</h2>
+    <button class="ghost small" onclick="TD.gAll=!TD.gAll;teacherView()">${TD.gAll ? "8개만 보기" : "모두 보기"}</button></div>
+    <div class="muted" style="margin:4px 0 6px">첫 풀이 기준 · 학생 줄을 누르면 학생별로 낸 답을 모두 볼 수 있어요.</div>
+    ${top.map(c => { const q = c.l.quiz[c.q]; return q ? `<div class="sbox" style="background:#fff"><div class="muted">${GRAM.indexOf(c.l) + 1}과 ${esc(c.l.t)} · Q${c.q + 1} · <b style="color:var(--bad)">${c.who.length}명</b> 틀림</div>
+      <div><b>${esc(q.q)}</b> <span class="en" style="font-size:15px">${esc(gPlain(q))}</span></div>
+      <div style="font-size:14px">⭕ 정답: <b style="color:var(--ok)">${esc(gRight(q))}</b> · 낸 오답: ${Object.entries(c.ans).sort((a, b) => b[1] - a[1]).map(([a, n]) => `<b style="color:var(--bad)">${esc(a)}</b>${n > 1 ? `(${n})` : ""}`).join(", ")}</div>
+      <div class="muted">${c.who.map(esc).join(", ")}</div></div>` : ""; }).join("")}</div>`;
 }
