@@ -272,7 +272,7 @@ async function pushLesson(l) {
 // ── 선생님 화면: 학생별 퀴즈 기록 + 자주 틀린 문항
 function tGramStudent(s) {
   const ls = GRAM.filter(l => s.gl && s.gl[l.id]);
-  if (!ls.length) return "";
+  if (!ls.length) return s.gram && +s.gram.st ? `<div class="muted" style="text-align:left;padding:0 4px 10px">※ 이 학생은 퀴즈 답 기록 기능(11/6) 전에 풀어서 낸 답이 남아 있지 않아요. 앞으로 푸는 퀴즈부터 보여요.</div>` : "";
   return `<div style="text-align:left;padding:4px 4px 12px">${ls.map(l => {
     const r = s.gl[l.id], log = parseLog(r.steps);
     return `<details class="glog"><summary><b>${GRAM.indexOf(l) + 1}과 ${esc(l.t)}</b> ${+r.st ? "✅ 통과" : "⏳ 아직"} · 첫 풀이 ${esc(r.quiz)}/${l.quiz.length} · 틀린 답 ${log.reduce((n, e) => n + e.w.length, 0)}개</summary>
@@ -294,7 +294,7 @@ function tGramWrong(studs) {
     }));
   }));
   const top = Object.values(cnt).sort((a, b) => b.who.length - a.who.length).slice(0, TD.gAll ? 100 : 8);
-  if (!top.length) return "";
+  if (!top.length) return `<div class="card"><h2 style="margin:0">🧩 기초 문법 자주 틀린 문항</h2><div class="muted" style="margin-top:6px">아직 기록된 오답이 없어요. 11/6 업데이트 이후 학생이 푼 퀴즈부터 여기에 모이고, 학생 줄을 누르면 학생별로 낸 답이 보여요.</div></div>`;
   return `<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">🧩 기초 문법 자주 틀린 문항</h2>
     <button class="ghost small" onclick="TD.gAll=!TD.gAll;teacherView()">${TD.gAll ? "8개만 보기" : "모두 보기"}</button></div>
     <div class="muted" style="margin:4px 0 6px">첫 풀이 기준 · 학생 줄을 누르면 학생별로 낸 답을 모두 볼 수 있어요.</div>
