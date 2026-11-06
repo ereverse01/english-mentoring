@@ -185,6 +185,32 @@ td.l,th.l{text-align:left}
 .tg .yes{color:var(--ok);font-weight:900}
 .clickrow{cursor:pointer}
 .clickrow:hover{background:#faf8f3}
+.who button{white-space:nowrap}
+@media (max-width:560px){.who{margin-left:0;width:100%;flex-wrap:wrap}}
+.modes{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:720px){.modes{grid-template-columns:1fr}}
+.mode{background:#fff;color:var(--ink);border:2px solid var(--line);border-radius:20px;padding:22px 18px;text-align:center;font-weight:500;transition:transform .1s,border-color .1s}
+.mode:hover{transform:translateY(-3px);border-color:var(--pri)}
+.mode .mi{font-size:52px;line-height:1.2}
+.mode .mt{font-size:20px;font-weight:800;margin:6px 0}
+.mode .md{color:var(--sub);font-size:15px;line-height:1.55}
+.mode .mp{display:inline-block;margin-top:12px;background:var(--pri2);color:var(--pri);border-radius:99px;padding:3px 12px;font-weight:800;font-size:14px}
+.ga,.gb,.gc{border-radius:5px;padding:1px 4px}
+.ga{background:#fff19a}.gb{background:#cfe1ff}.gc{background:#ffd6e7}
+.row .ga,.row .gb,.row .gc{font-weight:700;font-size:14px;padding:2px 10px}
+.rules{margin:0 0 10px;padding-left:22px}.rules li{margin:6px 0}
+.tapbox{line-height:2.4}
+.tw{cursor:pointer;border-radius:6px;padding:3px 4px;border:2px solid transparent}
+.tw:hover{background:#f3f0e8}
+.tw.on{background:var(--pri2);border-color:var(--pri)}
+.tw.right{background:var(--okbg);border-color:var(--ok)}
+.tw.wrong{background:var(--badbg);border-color:var(--bad)}
+.orderline{min-height:58px;border:2px dashed var(--line);border-radius:12px;padding:8px;margin:10px 0;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.orderline.ok{border-color:var(--ok);background:var(--okbg)}.orderline.no{border-color:var(--bad);background:var(--badbg)}
+.chunks{display:flex;flex-wrap:wrap;gap:8px}
+.chunk{background:#fff;color:var(--ink);border:1.5px solid var(--line);font-family:Georgia,serif;font-weight:600;font-size:17px;padding:8px 14px}
+.chunk.on{background:var(--pri2);border-color:var(--pri);color:var(--ink)}
+.chunk:disabled{opacity:1}
 </style>
 </head>
 <body>
@@ -192,6 +218,8 @@ td.l,th.l{text-align:left}
 <div id="toast"></div>
 <script src="dict.js"></script>
 <script src="xlsx.js"></script>
+<script src="grammar.js"></script>
+<script src="gram-ui.js"></script>
 <div id="pop" onclick="this.classList.remove('show')"><div class="in"><div class="s" id="popS"></div><div id="popT" style="font-weight:800;font-size:20px;margin-top:6px"></div><div class="muted" style="margin-top:6px">눌러서 닫기</div></div></div>
 <script>
 // ▼ 구글 시트 Apps Script 웹 앱 주소 (비워 두면 이 기기에만 저장)
@@ -225,7 +253,7 @@ const NUMS = "①②③④⑤";
 // ───────────────── 저장 ─────────────────
 const ME_KEY = "eng-mentor-me";
 let S = null;      // { me:{sid,name}, passages:[], att:{date:{n,st}} }
-let V = { tab: "home", pid: null, step: "tr", pen: "k", lv: "고1", tp: "자유", aiShow: false, flip: {} };
+let V = { mode: null, gid: null, gstage: "obs", dWrong: {}, showKo: {}, tab: "home", pid: null, step: "tr", pen: "k", lv: "고1", tp: "자유", aiShow: false, flip: {} };
 let T = null;      // 단어 시험 진행 상태
 
 function dataKey(sid) { return "eng-mentor-v1:" + sid; }
@@ -242,12 +270,12 @@ function loadData(me) {
   try { d = JSON.parse(localStorage.getItem(dataKey(me.sid)) || "null"); } catch (e) {}
   d = d || { passages: [], att: {} };
   d.me = me;
-  d.passages = d.passages || []; d.att = d.att || {}; d.qs = d.qs || []; d.qseen = d.qseen || {}; d.vx = d.vx || {}; d.mySheet = d.mySheet || "";
+  d.passages = d.passages || []; d.att = d.att || {}; d.qs = d.qs || []; d.qseen = d.qseen || {}; d.vx = d.vx || {}; d.mySheet = d.mySheet || ""; d.gram = d.gram || {};
   return d;
 }
 function saveLocal() {
   if (!S) return;
-  try { localStorage.setItem(dataKey(S.me.sid), JSON.stringify({ passages: S.passages, att: S.att, qs: S.qs, qseen: S.qseen, vx: S.vx, mySheet: S.mySheet })); } catch (e) { toast("기기 저장 공간이 부족해요"); }
+  try { localStorage.setItem(dataKey(S.me.sid), JSON.stringify({ passages: S.passages, att: S.att, qs: S.qs, qseen: S.qseen, vx: S.vx, mySheet: S.mySheet, gram: S.gram, gramUpd: S.gramUpd, gramStart: S.gramStart })); } catch (e) { toast("기기 저장 공간이 부족해요"); }
 }
 function touch(p) { p.updated = Date.now(); saveLocal(); queuePush(p); }
 
@@ -288,6 +316,7 @@ async function pull() {
     (r.rows || []).forEach(row => {
       let p; try { p = JSON.parse(row.data); } catch (e) { return; }
       if (!p || !p.id) return;
+      if (p.id === "gram") { if (mergeGram(p)) changed = true; return; }
       const i = S.passages.findIndex(x => x.id === p.id);
       if (i < 0) { S.passages.push(p); changed = true; }
       else if ((S.passages[i].updated || 0) < (p.updated || 0)) { S.passages[i] = p; changed = true; }
@@ -318,7 +347,7 @@ function shuffle(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { co
 function toast(m) { const t = document.getElementById("toast"); t.textContent = m; t.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 2200); }
 function cur() { return S && S.passages.find(p => p.id === V.pid); }
 function stCount(p) { return STEPS.filter(s => p.st[s.k]).length; }
-function totalSt() { return S ? S.passages.reduce((n, p) => n + stCount(p) + (stCount(p) === 6 ? 1 : 0), 0) : 0; }
+function totalSt() { return S ? S.passages.reduce((n, p) => n + stCount(p) + (stCount(p) === 6 ? 1 : 0), 0) + gramSt() : 0; }
 function trAvg(p) { const sc = (p.tr.sc || []).filter(x => x != null); return sc.length ? Math.round(sc.reduce((a, b) => a + b, 0) / sc.length) : ""; }
 async function copyText(t) {
   try { await navigator.clipboard.writeText(t); return true; }
@@ -536,27 +565,30 @@ function render() {
   const y = window.scrollY;
   if (!S) { app.innerHTML = viewLogin(); return; }
   app.innerHTML = header() + '<div class="wrap">' + (
+    !V.mode ? viewMode() :
+    V.tab === "gram" ? (V.gid ? viewGram() : viewGramList()) :
     V.tab === "home" ? (V.pid ? viewPassage() : viewHome()) :
     V.tab === "prog" ? viewProgress() : viewAttend()
   ) + "</div>";
   window.scrollTo(0, y);
   afterRender();
 }
-function go(tab) { V.tab = tab; V.pid = null; T = null; render(); window.scrollTo(0, 0); }
+function go(tab) { V.tab = tab; V.pid = null; V.gid = null; GQ = null; T = null; render(); window.scrollTo(0, 0); }
 function header() {
-  return `<header><div class="hbar"><div class="logo">📖 영어 독해 멘토링</div>
+  const tb = (k, n) => `<button class="tab ${V.tab === k ? "on" : ""}" onclick="go('${k}')">${n}</button>`;
+  const tabs = !V.mode ? "" : V.mode === "basic"
+    ? tb("gram", "🧩 문장 구조 연습") + tb("att", "📅 출석부")
+    : tb("home", "📚 지문 공부") + tb("prog", "🏅 진도표") + tb("att", "📅 출석부");
+  return `<header><div class="hbar"><div class="logo">${V.mode === "basic" ? "🧩 기초 문법 연습" : "📖 영어 독해 멘토링"}</div>
   <div class="who"><span class="sync" id="sync">${syncLabel()}</span><span class="stk-count">🏅 ${totalSt()}</span>${esc(S.me.sid)} ${esc(S.me.name)}
+  ${V.mode ? `<button class="soft small" onclick="pickMode(null)">🔀 공부 바꾸기</button>` : ""}
   <button class="ghost small" onclick="logout()">나가기</button></div></div>
-  <div class="tabs">
-   <button class="tab ${V.tab === "home" ? "on" : ""}" onclick="go('home')">📚 지문 공부</button>
-   <button class="tab ${V.tab === "prog" ? "on" : ""}" onclick="go('prog')">🏅 진도표</button>
-   <button class="tab ${V.tab === "att" ? "on" : ""}" onclick="go('att')">📅 출석부</button>
-  </div></header>`;
+  ${tabs ? `<div class="tabs">${tabs}</div>` : ""}</header>`;
 }
 function viewLogin() {
   return `<div class="wrap"><div class="card login">
    <h2>📖 영어 독해 멘토링</h2>
-   <div class="muted">수준에 맞는 지문으로 번역 → 수능형 문제 → 구조 도식화 → 단어장·단어 시험까지!</div>
+   <div class="muted">기초 문법·문장 구조 연습부터, 수준에 맞는 지문으로 번역 → 수능형 문제 → 구조 도식화 → 단어장·단어 시험까지!</div>
    <label>학번 (5자리)</label><input id="sid" inputmode="numeric" maxlength="5" placeholder="예: 10315">
    <label>이름</label><input id="nm" maxlength="10" placeholder="이름" onkeydown="if(event.key==='Enter')doLogin()">
    <div style="margin-top:16px"><button style="width:100%" onclick="doLogin()">시작하기</button></div>
@@ -575,7 +607,7 @@ function doLogin() {
 }
 function logout() {
   if (!confirm("나갈까요? (기록은 저장돼 있어요)")) return;
-  localStorage.removeItem(ME_KEY); S = null; V.pid = null; render();
+  localStorage.removeItem(ME_KEY); S = null; V.pid = null; V.mode = null; V.gid = null; GQ = null; render();
 }
 
 // ── 홈: 새 지문 + 내 지문 목록
@@ -1474,24 +1506,25 @@ function teacherView() {
     return;
   }
   const by = {};
-  TD.rows.forEach(r => { const s = by[r.sid] || (by[r.sid] = { sid: r.sid, name: r.name, ps: [], att: {} }); s.ps.push(r); s.name = r.name; });
+  TD.rows.forEach(r => { const s = by[r.sid] || (by[r.sid] = { sid: r.sid, name: r.name, ps: [], att: {} }); if (r.id === "gram") s.gram = r; else s.ps.push(r); s.name = r.name; });
   TD.att.forEach(a => { const s = by[a.sid] || (by[a.sid] = { sid: a.sid, name: a.name, ps: [], att: {} }); s.att[a.date] = a; });
   const studs = Object.values(by).sort((a, b) => a.sid.localeCompare(b.sid));
   const dates = [...new Set(TD.att.map(a => a.date))].sort().slice(-14);
   const f = (TD.filter || "").trim();
   const shown = studs.filter(s => !f || s.sid.startsWith(f) || s.name.includes(f));
   const rows = shown.map(s => {
-    const st = s.ps.reduce((n, p) => n + (+p.st || 0) + (+p.st === 6 ? 1 : 0), 0);
+    const st = s.ps.reduce((n, p) => n + (+p.st || 0) + (+p.st === 6 ? 1 : 0), 0) + (s.gram ? +s.gram.st || 0 : 0);
     const full = s.ps.filter(p => +p.st === 6).length;
     const open = TD.open === s.sid;
-    const det = open ? `<tr><td colspan="${6 + dates.length}" style="background:#faf8f3"><table class="tg"><tr><th class="l">지문</th><th>수준</th><th>시작일</th><th>완료 단계</th><th>스티커</th><th>번역</th><th>문제</th><th>단어</th><th>저장</th></tr>
+    const gm = s.gram ? `<div class="l" style="text-align:left;padding:6px 4px 10px"><b>🧩 기초 문법</b> ${+s.gram.st || 0}/${GRAM.length}과 통과${s.gram.quiz !== "" && s.gram.quiz != null ? ` · 첫 도전 평균 ${esc(s.gram.quiz)}/6` : ""}<div class="muted">${esc(s.gram.steps) || "아직 통과한 과 없음"}</div></div>` : "";
+    const det = open ? `<tr><td colspan="${7 + dates.length}" style="background:#faf8f3">${gm}<table class="tg"><tr><th class="l">지문</th><th>수준</th><th>시작일</th><th>완료 단계</th><th>스티커</th><th>번역</th><th>문제</th><th>단어</th><th>저장</th></tr>
       ${s.ps.map(p => `<tr><td class="l">${esc(p.title)}</td><td>${esc(p.level)}</td><td>${esc(p.created)}</td><td class="l" style="font-size:13px">${esc(p.steps)}</td><td>${p.st}/6</td><td>${esc(p.tr)}</td><td>${esc(p.quiz)}</td><td>${esc(p.test)}</td><td style="font-size:12px">${esc(String(p.time).slice(0, 16).replace("T", " "))}</td></tr>`).join("")}</table></td></tr>` : "";
-    return `<tr class="clickrow" onclick="TD.open=TD.open==='${s.sid}'?null:'${s.sid}';teacherView()"><td>${esc(s.sid)}</td><td class="l"><b>${esc(s.name)}</b></td><td>${s.ps.filter(p => +p.st > 0).length}<span class="muted" style="font-size:12px"> /${s.ps.length}</span></td><td>${full}</td><td>🏅 ${st}</td><td>${Object.keys(s.att).length}</td>
+    return `<tr class="clickrow" onclick="TD.open=TD.open==='${s.sid}'?null:'${s.sid}';teacherView()"><td>${esc(s.sid)}</td><td class="l"><b>${esc(s.name)}</b></td><td>${s.ps.filter(p => +p.st > 0).length}<span class="muted" style="font-size:12px"> /${s.ps.length}</span></td><td>${full}</td><td>${s.gram ? `${+s.gram.st || 0}/${GRAM.length}` : ""}</td><td>🏅 ${st}</td><td>${Object.keys(s.att).length}</td>
       ${dates.map(d => `<td class="${s.att[d] ? "yes" : ""}">${s.att[d] ? "✔" : ""}</td>`).join("")}</tr>${det}`;
   }).join("");
   app.innerHTML = `<header><div class="hbar"><div class="logo">👩‍🏫 영어 독해 멘토링 · 선생님</div><div class="who"><button class="ghost small" onclick="tLoad()">새로고침</button><button class="ghost small" onclick="tCopy()">엑셀용 복사</button></div></div></header>
   <div class="wrap">${qnaHTML(f)}<div class="card"><div class="row"><input id="tf" placeholder="학번 앞자리(예: 103)나 이름으로 찾기" value="${esc(f)}" style="max-width:320px"><span class="muted">학생 ${shown.length}명 · 줄을 누르면 지문별 기록</span></div>
-    <div class="tscroll" style="margin-top:10px"><table class="tg"><tr><th>학번</th><th class="l">이름</th><th>공부한 지문<br>/받은 지문</th><th>완주</th><th>스티커</th><th>출석일</th>${dates.map(d => `<th>${d.slice(5).replace("-", "/")}</th>`).join("")}</tr>${rows}</table></div></div></div>`;
+    <div class="tscroll" style="margin-top:10px"><table class="tg"><tr><th>학번</th><th class="l">이름</th><th>공부한 지문<br>/받은 지문</th><th>완주</th><th>기초 문법<br>통과</th><th>스티커</th><th>출석일</th>${dates.map(d => `<th>${d.slice(5).replace("-", "/")}</th>`).join("")}</tr>${rows}</table></div></div></div>`;
   document.querySelectorAll("[data-qa]").forEach(el => el.oninput = () => { (TD.drafts = TD.drafts || {})[el.dataset.qa] = el.value; });
   const tf = document.getElementById("tf");
   tf.oninput = () => { TD.filter = tf.value; const pos = tf.selectionStart; teacherView(); const n = document.getElementById("tf"); n.focus(); n.setSelectionRange(pos, pos); };
