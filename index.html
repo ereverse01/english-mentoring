@@ -222,8 +222,8 @@ td.l,th.l{text-align:left}
 <div id="toast"></div>
 <script src="dict.js"></script>
 <script src="xlsx.js"></script>
-<script src="grammar.js"></script>
-<script src="gram-ui.js"></script>
+<script src="grammar.js?v=20261106c"></script>
+<script src="gram-ui.js?v=20261106c"></script>
 <div id="pop" onclick="this.classList.remove('show')"><div class="in"><div class="s" id="popS"></div><div id="popT" style="font-weight:800;font-size:20px;margin-top:6px"></div><div class="muted" style="margin-top:6px">눌러서 닫기</div></div></div>
 <script>
 // ▼ 구글 시트 Apps Script 웹 앱 주소 (비워 두면 이 기기에만 저장)
@@ -1511,7 +1511,7 @@ function teacherView() {
     return;
   }
   const by = {};
-  TD.rows.forEach(r => { const s = by[r.sid] || (by[r.sid] = { sid: r.sid, name: r.name, ps: [], att: {} }); if (r.id === "gram") s.gram = r; else if (r.id.startsWith("g-")) (s.gl = s.gl || {})[r.id.slice(2)] = r; else s.ps.push(r); s.name = r.name; });
+  TD.rows.forEach(r => { const s = by[r.sid] || (by[r.sid] = { sid: r.sid, name: r.name, ps: [], att: {} }); const id = String(r.id || ""); if (id === "gram") s.gram = r; else if (id.startsWith("g-")) (s.gl = s.gl || {})[id.slice(2)] = r; else s.ps.push(r); s.name = r.name; });
   TD.att.forEach(a => { const s = by[a.sid] || (by[a.sid] = { sid: a.sid, name: a.name, ps: [], att: {} }); s.att[a.date] = a; });
   const studs = Object.values(by).sort((a, b) => a.sid.localeCompare(b.sid));
   const dates = [...new Set(TD.att.map(a => a.date))].sort().slice(-14);
@@ -1521,19 +1521,20 @@ function teacherView() {
     const st = s.ps.reduce((n, p) => n + (+p.st || 0) + (+p.st === 6 ? 1 : 0), 0) + (s.gram ? +s.gram.st || 0 : 0);
     const full = s.ps.filter(p => +p.st === 6).length;
     const open = TD.open === s.sid;
-    const gm = s.gram ? `<div class="l" style="text-align:left;padding:6px 4px 10px"><b>🧩 기초 문법</b> ${+s.gram.st || 0}/${GRAM.length}과 통과${s.gram.quiz !== "" && s.gram.quiz != null ? ` · 첫 도전 평균 ${esc(s.gram.quiz)}/6` : ""}<div class="muted">${esc(s.gram.steps) || "아직 통과한 과 없음"}</div></div>${tGramStudent(s)}` : tGramStudent(s);
+    const gm = s.gram ? `<div class="l" style="text-align:left;padding:6px 4px 10px"><b>🧩 기초 문법</b> ${+s.gram.st || 0}/${GRAM.length}과 통과${s.gram.quiz !== "" && s.gram.quiz != null ? ` · 첫 도전 평균 ${esc(s.gram.quiz)}/6` : ""}<div class="muted">${esc(s.gram.steps) || "아직 통과한 과 없음"}</div></div>${tgs(s)}` : tgs(s);
     const det = open ? `<tr><td colspan="${7 + dates.length}" style="background:#faf8f3">${gm}<table class="tg"><tr><th class="l">지문</th><th>수준</th><th>시작일</th><th>완료 단계</th><th>스티커</th><th>번역</th><th>문제</th><th>단어</th><th>저장</th></tr>
       ${s.ps.map(p => `<tr><td class="l">${esc(p.title)}</td><td>${esc(p.level)}</td><td>${esc(p.created)}</td><td class="l" style="font-size:13px">${esc(p.steps)}</td><td>${p.st}/6</td><td>${esc(p.tr)}</td><td>${esc(p.quiz)}</td><td>${esc(p.test)}</td><td style="font-size:12px">${esc(String(p.time).slice(0, 16).replace("T", " "))}</td></tr>`).join("")}</table></td></tr>` : "";
     return `<tr class="clickrow" onclick="TD.open=TD.open==='${s.sid}'?null:'${s.sid}';teacherView()"><td>${esc(s.sid)}</td><td class="l"><b>${esc(s.name)}</b></td><td>${s.ps.filter(p => +p.st > 0).length}<span class="muted" style="font-size:12px"> /${s.ps.length}</span></td><td>${full}</td><td>${s.gram ? `${+s.gram.st || 0}/${GRAM.length}` : ""}</td><td>🏅 ${st}</td><td>${Object.keys(s.att).length}</td>
       ${dates.map(d => `<td class="${s.att[d] ? "yes" : ""}">${s.att[d] ? "✔" : ""}</td>`).join("")}</tr>${det}`;
   }).join("");
   app.innerHTML = `<header><div class="hbar"><div class="logo">👩‍🏫 영어 독해 멘토링 · 선생님</div><div class="who"><button class="ghost small" onclick="tLoad()">새로고침</button><button class="ghost small" onclick="tCopy()">엑셀용 복사</button></div></div></header>
-  <div class="wrap">${qnaHTML(f)}${tGramWrong(shown)}<div class="card"><div class="row"><input id="tf" placeholder="학번 앞자리(예: 103)나 이름으로 찾기" value="${esc(f)}" style="max-width:320px"><span class="muted">학생 ${shown.length}명 · 줄을 누르면 지문별 기록</span></div>
+  <div class="wrap">${qnaHTML(f)}${typeof tGramWrong === "function" ? tGramWrong(shown) : ""}<div class="card"><div class="row"><input id="tf" placeholder="학번 앞자리(예: 103)나 이름으로 찾기" value="${esc(f)}" style="max-width:320px"><span class="muted">학생 ${shown.length}명 · 줄을 누르면 지문별 기록</span></div>
     <div class="tscroll" style="margin-top:10px"><table class="tg"><tr><th>학번</th><th class="l">이름</th><th>공부한 지문<br>/받은 지문</th><th>완주</th><th>기초 문법<br>통과</th><th>스티커</th><th>출석일</th>${dates.map(d => `<th>${d.slice(5).replace("-", "/")}</th>`).join("")}</tr>${rows}</table></div></div></div>`;
   document.querySelectorAll("[data-qa]").forEach(el => el.oninput = () => { (TD.drafts = TD.drafts || {})[el.dataset.qa] = el.value; });
   const tf = document.getElementById("tf");
   tf.oninput = () => { TD.filter = tf.value; const pos = tf.selectionStart; teacherView(); const n = document.getElementById("tf"); n.focus(); n.setSelectionRange(pos, pos); };
 }
+function tgs(s) { return typeof tGramStudent === "function" ? tGramStudent(s) : ""; }
 function qnaHTML(f) {
   const all = (TD.qna || []).filter(q => !f || q.sid.startsWith(f) || q.name.includes(f));
   const wait = all.filter(q => !q.a).sort((a, b) => String(a.time).localeCompare(String(b.time)));
@@ -1573,9 +1574,10 @@ async function tLoad() {
     const r = await api({ action: "list", pw });
     if (!r.ok) { sessionStorage.removeItem("em-tpw"); TD = null; teacherView(); return toast(r.error === "pw" ? "암호가 달라요" : "불러오지 못했어요"); }
     sessionStorage.setItem("em-tpw", pw);
-    TD = Object.assign(TD || {}, { rows: r.rows, att: r.att, qna: r.qna || [] });
-    teacherView();
-  } catch (e) { toast("연결에 실패했어요"); }
+    TD = Object.assign(TD || {}, { rows: r.rows || [], att: r.att || [], qna: r.qna || [] });
+  } catch (e) { return toast("연결에 실패했어요"); }
+  try { teacherView(); }
+  catch (e) { console.error(e); alert("화면을 그리다 오류가 났어요. 새로고침(Ctrl+F5) 후 다시 해 보세요. (" + e.message + ")"); }
 }
 function tCopy() {
   const lines = [["학번", "이름", "지문", "수준", "시작일", "완료 단계", "스티커", "번역 평균", "문제 점수", "단어시험", "마지막 저장"].join("\t")];
